@@ -57,6 +57,31 @@ npm install
 npm run dev
 ```
 
+#### Local Supabase (optional, recommended)
+
+Instead of a hosted project you can run the whole stack locally with the
+[Supabase CLI](https://supabase.com/docs/guides/cli):
+
+```bash
+supabase start          # boots Postgres + Auth + Storage in Docker
+supabase db reset       # applies migrations/*.sql in order, then seed.sql
+```
+
+`supabase/config.toml` configures ports and passwordless magic-link auth.
+`supabase/seed.sql` creates a demo admin steward (`steward@example.com`), a
+browsable memorial page, and a pending memory so the moderation queue isn't
+empty. Sign in by requesting a magic link for that address and opening it in
+Inbucket at <http://localhost:54324>. Point `.env.local` at the local URLs and
+keys that `supabase start` prints.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs `npm run typecheck` and `npm run build` on every
+push to `main` and every pull request, so the default branch stays green. The
+build runs with placeholder public env vars — since the app degrades gracefully
+when integrations are unconfigured, a keyless build still type-checks every
+route end to end.
+
 ### 4. Deploy (Vercel)
 
 1. Import the repo into Vercel; set all env vars from `.env.example`.
