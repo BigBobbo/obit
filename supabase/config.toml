@@ -1,0 +1,47 @@
+# Local development config for the Supabase CLI.
+#   supabase start      # boot local Postgres + Auth + Storage
+#   supabase db reset   # run migrations/*.sql in order, then seed.sql
+#
+# The project_id namespaces local Docker containers; it is unrelated to your
+# hosted project ref.
+project_id = "memorial-pages"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+# Catches outbound email locally (magic links, verification codes, digests)
+# so nothing actually sends during development.
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+jwt_expiry = 3600
+enable_signup = true
+
+# Magic-link only at launch (PRD §6): no passwords to phish or stuff.
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+double_confirm_changes = true
+# Passwordless: users receive a sign-in link, never set a password.
