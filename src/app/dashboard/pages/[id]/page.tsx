@@ -35,7 +35,7 @@ export const dynamic = "force-dynamic";
 const PAGE_COLUMNS =
   "id, random_id, slug, name, date_of_birth, date_of_death, bio, status, review_everything, auto_publish_optout, access_mode, access_code_hash, access_code_rotated_at, announcement_enabled, announcement_text";
 const EVENT_COLUMNS =
-  "id, kind, title, starts_at, tz, venue, locality, map_url, livestream_url, notes, on_announcement, rsvp_enabled, event_rsvps(id, party_size)";
+  "id, kind, title, starts_at, tz, venue, locality, map_url, livestream_url, notes, on_announcement, rsvp_enabled, event_rsvps(id, name, party_size, created_at)";
 
 export default async function ManagePage({
   params,
@@ -165,7 +165,12 @@ export default async function ManagePage({
     .order("starts_at", { ascending: true });
 
   const stewardEvents: StewardEvent[] = (events ?? []).map((e) => {
-    const rsvps = (e.event_rsvps ?? []) as { id: string; party_size: number }[];
+    const rsvps = (e.event_rsvps ?? []) as {
+      id: string;
+      name: string;
+      party_size: number;
+      created_at: string;
+    }[];
     return {
       id: e.id as string,
       kind: e.kind as string,
@@ -181,6 +186,9 @@ export default async function ManagePage({
       rsvp_enabled: e.rsvp_enabled as boolean,
       rsvpCount: rsvps.length,
       rsvpGuests: rsvps.reduce((sum, r) => sum + (r.party_size ?? 1), 0),
+      rsvps: [...rsvps]
+        .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""))
+        .map((r) => ({ id: r.id, name: r.name, partySize: r.party_size ?? 1 })),
     };
   });
 

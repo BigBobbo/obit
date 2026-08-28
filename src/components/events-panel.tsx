@@ -8,7 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { EVENT_KINDS, eventKindLabel, formatEventTime, type EventRecord } from "@/lib/events";
 
-export type StewardEvent = EventRecord & { rsvpCount: number; rsvpGuests: number };
+export type StewardEvent = EventRecord & {
+  rsvpCount: number;
+  rsvpGuests: number;
+  /** Steward-visible only. A funeral guest list is not public information. */
+  rsvps: { id: string; name: string; partySize: number }[];
+};
 
 type FormState = {
   kind: string;
@@ -150,11 +155,31 @@ export function EventsPanel({ pageId, events }: { pageId: string; events: Stewar
             </p>
           )}
           {event.rsvp_enabled && (
-            <p className="mt-2 text-sm">
-              <strong>{event.rsvpCount}</strong>{" "}
-              {event.rsvpCount === 1 ? "reply" : "replies"} · {event.rsvpGuests}{" "}
-              {event.rsvpGuests === 1 ? "person" : "people"} expected
-            </p>
+            <div className="mt-2 text-sm">
+              <p>
+                <strong>{event.rsvpCount}</strong>{" "}
+                {event.rsvpCount === 1 ? "reply" : "replies"} · {event.rsvpGuests}{" "}
+                {event.rsvpGuests === 1 ? "person" : "people"} expected
+              </p>
+              {event.rsvps.length > 0 && (
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-muted-foreground">
+                    Who&apos;s coming
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                    {event.rsvps.map((r) => (
+                      <li key={r.id}>
+                        {r.name}
+                        {r.partySize > 1 ? ` (${r.partySize})` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Only you and your co-stewards can see this.
+                  </p>
+                </details>
+              )}
+            </div>
           )}
           <div className="mt-3 flex gap-2">
             <Button size="sm" variant="outline" onClick={() => startEdit(event)}>
