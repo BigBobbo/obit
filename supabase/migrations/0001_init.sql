@@ -70,6 +70,29 @@ create index pages_dedupe_idx on public.pages (lower(name), date_of_birth, date_
 
 alter table public.pages enable row level security;
 
+-- ---------------------------------------------------------------------------
+-- Stewards
+-- ---------------------------------------------------------------------------
+create table public.stewards (
+  id uuid primary key default gen_random_uuid(),
+  page_id uuid not null references public.pages (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  role text not null default 'co_steward' check (role in ('owner', 'co_steward')),
+  created_at timestamptz not null default now(),
+  unique (page_id, user_id)
+);
+
+create index stewards_user_idx on public.stewards (user_id);
+
+alter table public.stewards enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Permission helpers
+-- ---------------------------------------------------------------------------
+-- NOTE: these are `language sql`, whose bodies Postgres parses and validates at
+-- CREATE time (unlike plpgsql). Every table they reference must already exist,
+-- which is why public.stewards is created immediately above rather than in its
+-- own section further down.
 create or replace function public.is_steward(p_page_id uuid)
 returns boolean language sql security definer stable set search_path = public as $$
   select exists (
@@ -100,21 +123,8 @@ create policy "pages: steward update" on public.pages
 -- per-account rate limit cannot be bypassed.
 
 -- ---------------------------------------------------------------------------
--- Stewards
+-- Steward policies (the table itself is created above, before is_steward)
 -- ---------------------------------------------------------------------------
-create table public.stewards (
-  id uuid primary key default gen_random_uuid(),
-  page_id uuid not null references public.pages (id) on delete cascade,
-  user_id uuid not null references public.profiles (id) on delete cascade,
-  role text not null default 'co_steward' check (role in ('owner', 'co_steward')),
-  created_at timestamptz not null default now(),
-  unique (page_id, user_id)
-);
-
-create index stewards_user_idx on public.stewards (user_id);
-
-alter table public.stewards enable row level security;
-
 create policy "stewards: read own pages" on public.stewards
   for select using (public.is_steward(page_id) or public.is_admin());
 -- Steward management goes through the API (service role) so the

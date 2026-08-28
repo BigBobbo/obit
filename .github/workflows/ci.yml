@@ -41,3 +41,32 @@ jobs:
           NEXT_PUBLIC_APP_URL: http://localhost:3000
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+
+  # The migrations are applied to a real Postgres, in order. A syntax check
+  # cannot catch what this catches: a `language sql` function body is parsed and
+  # validated at CREATE time, so referencing a table the same file creates
+  # further down fails only at apply time. That is how is_steward() shipped
+  # broken and stayed broken until someone ran it by hand.
+  migrations:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply migrations and assert the schema
+        run: supabase/tests/apply-migrations.sh
+        env:
+          PGURL: postgres://postgres:postgres@localhost:5432/postgres
