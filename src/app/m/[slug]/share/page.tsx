@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { findPageByRef } from "@/lib/pages";
 import { ShareForm } from "@/components/share-form";
+import { pickPrompts, promptSeed } from "@/lib/prompts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { robots: { index: false, follow: false } };
@@ -26,7 +27,14 @@ export default async function SharePage({ params }: { params: Promise<{ slug: st
         6-digit code to your email to confirm it&apos;s you — no account needed.
       </p>
       <div className="mt-8">
-        <ShareForm pageId={page.id} randomId={page.random_id} pageName={page.name} />
+        {/* Chosen on the server so the markup matches on hydration; seeded by
+            the day so a page doesn't collect five answers to one question. */}
+        <ShareForm
+          pageId={page.id}
+          randomId={page.random_id}
+          pageName={page.name}
+          prompts={pickPrompts(promptSeed(page.id))}
+        />
       </div>
     </main>
   );

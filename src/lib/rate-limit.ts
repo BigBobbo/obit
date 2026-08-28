@@ -42,4 +42,20 @@ export const RATE_LIMITS = {
   reportPerEmailPerDay: { max: 5, window: DAY },
   // Page creation (free tier: 2 per account per 30 days — checked separately)
   pageCreatePerIpPerDay: { max: 5, window: DAY },
+  // Access gate (PRD v2 §1). Two counters, because a funeral is exactly the
+  // case where dozens of people arrive through one carrier NAT within an hour.
+  // Attempts bound the scrypt work a stranger can make us do; only a *wrong*
+  // code spends a guess, so getting in never costs anybody else their turn.
+  accessCodeAttemptsPerIpPerHour: { max: 120, window: 3600 },
+  wrongAccessCodePerIpPerHour: { max: 20, window: 3600 },
+  wrongAccessCodePerPagePerHour: { max: 100, window: 3600 },
+  accessRequestPerIpPerDay: { max: 10, window: DAY },
+  accessRequestPerPagePerDay: { max: 50, window: DAY },
+  // Charity search proxies a partner API key, so it is metered per steward.
+  charitySearchPerUserPerHour: { max: 60, window: 3600 },
+  // Share-sheet taps. Generous — a family really does share a lot in week one.
+  shareMetricPerIpPerDay: { max: 100, window: DAY },
+  // RSVPs: a head count, not a guest book — generous, but not a spam vector.
+  rsvpPerIpPerDay: { max: 10, window: DAY },
+  rsvpPerEventPerDay: { max: 200, window: DAY },
 } as const;

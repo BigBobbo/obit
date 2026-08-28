@@ -15,6 +15,13 @@ drop function if exists public.bump_rate_limit(text, integer) cascade;
 drop function if exists public.bump_approved_count(text) cascade;
 drop function if exists public.unbump_approved_count(text) cascade;
 
+drop function if exists public.page_giving_total(uuid) cascade;
+
+drop table if exists public.donations cascade;
+drop table if exists public.page_charities cascade;
+drop table if exists public.event_rsvps cascade;
+drop table if exists public.events cascade;
+drop table if exists public.access_requests cascade;
 drop table if exists public.steward_requests cascade;
 drop table if exists public.processed_stripe_events cascade;
 drop table if exists public.moderation_config cascade;

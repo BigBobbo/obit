@@ -72,6 +72,7 @@ export async function sendWeeklyDigest(
   pendingCount: number,
   digestToken: string,
   openReports = 0,
+  giving: { totalCents: number; waitingMessages: number } = { totalCents: 0, waitingMessages: 0 },
 ) {
   // The dashboard link carries a token; opening it counts as steward activity
   // for the 90-day clock (PRD §4.5).
@@ -87,6 +88,16 @@ export async function sendWeeklyDigest(
         ${
           openReports > 0
             ? `<li><strong>${openReports} ${openReports === 1 ? "report" : "reports"} waiting for your decision</strong></li>`
+            : ""
+        }
+        ${
+          giving.totalCents > 0
+            ? `<li>${formatUsd(giving.totalCents)} given in ${escapeHtml(pageName)}'s memory so far</li>`
+            : ""
+        }
+        ${
+          giving.waitingMessages > 0
+            ? `<li><strong>${giving.waitingMessages} donor ${giving.waitingMessages === 1 ? "message" : "messages"} waiting for your decision</strong></li>`
             : ""
         }
       </ul>
@@ -136,6 +147,108 @@ export async function sendInactivityHoldNotice(to: string, pageName: string, pag
       <a href="${url}">open your dashboard</a>.</p>
     `),
   );
+}
+
+/**
+ * Access requests (PRD v2 §1.1). One link does both jobs: it proves the address
+ * and, once the family has said yes, it opens the page. A visitor never has to
+ * understand which of the two states they are in.
+ */
+export async function sendAccessVerification(
+  to: string,
+  opts: { pageName: string; randomId: string; token: string; preapproved: boolean },
+) {
+  const url = `${APP_URL()}/m/${opts.randomId}/access/verify?token=${opts.token}`;
+  await send(
+    to,
+    `Confirm your email to see ${opts.pageName}'s memorial`,
+    wrap(`
+      <p>You asked to see the memorial page for <strong>${escapeHtml(opts.pageName)}</strong>.</p>
+      <p><a href="${url}">Confirm this is your email address</a></p>
+      <p>${
+        opts.preapproved
+          ? "The family has already added you, so this link takes you straight to the page."
+          : "The family will then review your request. We'll email you if they say yes."
+      }</p>
+      <p style="font-size:13px;color:#777;">If you didn't ask for this, you can ignore this email.</p>
+    `),
+  );
+}
+
+/** The family said yes. The same capability token now opens the page. */
+export async function sendAccessApproved(
+  to: string,
+  opts: { pageName: string; randomId: string; token: string },
+) {
+  const url = `${APP_URL()}/m/${opts.randomId}/access/verify?token=${opts.token}`;
+  await send(
+    to,
+    `You can now see ${opts.pageName}'s memorial`,
+    wrap(`
+      <p>The family has given you access to the memorial page for
+      <strong>${escapeHtml(opts.pageName)}</strong>.</p>
+      <p><a href="${url}">Open the memorial</a></p>
+      <p style="font-size:13px;color:#777;">This link remembers you on this device, so
+      you won't have to ask again.</p>
+    `),
+  );
+}
+
+/**
+ * Someone is waiting at the door. Sent on every tier: the family choosing to
+ * gate their page is exactly the case where a slow queue does the damage.
+ */
+export async function sendAccessRequestNotification(
+  to: string,
+  opts: { pageName: string; pageId: string; requesterName: string; relationship: string },
+) {
+  const url = `${APP_URL()}/dashboard/pages/${opts.pageId}`;
+  await send(
+    to,
+    `${opts.requesterName} is asking to see ${opts.pageName}'s memorial`,
+    wrap(`
+      <p><strong>${escapeHtml(opts.requesterName)}</strong>${
+        opts.relationship ? ` (${escapeHtml(opts.relationship)})` : ""
+      } has confirmed their email and is asking to see the memorial page for
+      <strong>${escapeHtml(opts.pageName)}</strong>.</p>
+      <p>You decide. If you'd rather not, decline and they are simply never told —
+      no message is sent.</p>
+      <p><a href="${url}">Review the request</a></p>
+    `),
+  );
+}
+
+/**
+ * A memory the family decided not to publish, and why (PRD v2 §2.3). Never a
+ * bare rejection: unexplained removal is what stops people coming back.
+ */
+export async function sendMemoryDeclined(
+  to: string,
+  opts: { pageName: string; reason: string; randomId?: string | null },
+) {
+  const backUrl = opts.randomId ? `${APP_URL()}/m/${opts.randomId}/share` : null;
+  await send(
+    to,
+    `About your memory for ${opts.pageName}`,
+    wrap(`
+      <p>Thank you for writing something for <strong>${escapeHtml(opts.pageName)}</strong>.
+      The family has decided not to publish it.</p>
+      <p style="border-left:3px solid #ddd;padding-left:12px;">${escapeHtml(opts.reason)}</p>
+      ${
+        backUrl
+          ? `<p>You're welcome to <a href="${backUrl}">share something else</a> whenever you'd like to.</p>`
+          : ""
+      }
+    `),
+  );
+}
+
+function formatUsd(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(Math.round(cents / 100));
 }
 
 function escapeHtml(s: string): string {

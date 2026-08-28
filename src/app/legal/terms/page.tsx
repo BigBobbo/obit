@@ -27,6 +27,38 @@ export default function TermsPage() {
           submit and grant us a license to host and display it on the relevant
           memorial page.
         </p>
+        <h2 className="font-serif text-lg text-foreground">Charitable donations</h2>
+        <p>
+          A page&apos;s stewards may name registered US 501(c)(3) charities for
+          &ldquo;in lieu of flowers&rdquo; gifts. If you give:
+        </p>
+        <ul className="list-disc space-y-1 pl-6">
+          <li>
+            <strong>Your donation is made to the charity</strong>, through a
+            regulated payment partner that handles the transaction. Memorial
+            Pages is not a fundraiser, does not solicit donations on any
+            charity&apos;s behalf, and is not a party to your gift.
+          </li>
+          <li>
+            <strong>We never hold or receive your money</strong>, and we take no
+            part or percentage of it. It goes from you to the partner to the
+            charity.
+          </li>
+          <li>
+            <strong>Your receipt comes from the partner or the charity</strong>,
+            not from us. We do not issue tax receipts and cannot confirm the
+            deductibility of any gift.
+          </li>
+          <li>
+            Memorial pages show the <strong>total given</strong> and, once the
+            family has approved them, donors&apos; names and messages. What any
+            one person gave is never shown.
+          </li>
+          <li>
+            Requests for money outside a named charity are not permitted
+            anywhere on the service, including in memories.
+          </li>
+        </ul>
         <h2 className="font-serif text-lg text-foreground">Copyright (DMCA)</h2>
         <p>
           Copyright complaints can be submitted via the &quot;Report&quot; link

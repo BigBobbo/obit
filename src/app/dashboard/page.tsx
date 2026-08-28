@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { allFeaturesFree } from "@/lib/plan";
 import { formatDate } from "@/lib/utils";
 import { touchStewardActivityForPages } from "@/lib/audit";
 
@@ -80,18 +81,33 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {profile?.plan !== "paid" && (
+      {allFeaturesFree() ? (
+        // Free-for-now (PRD v2 §2.4). The fences are still in the code; they
+        // are simply open, and asking a grieving family to upgrade to something
+        // they already have would be worse than saying nothing.
         <Card className="mt-6">
-          <CardContent className="flex items-center justify-between pt-6">
+          <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">
-              Free plan: 1 page, 50 photos, standard QR. Upgrade for multiple
-              pages, unlimited photos, custom links, co-stewards and plaque PDFs.
+              Everything is free while we&apos;re getting started: as many pages
+              as you need, unlimited photos, custom links, co-stewards and plaque
+              PDFs.
             </p>
-            <form action="/api/stripe/checkout" method="POST">
-              <Button type="submit" variant="outline" size="sm">Upgrade</Button>
-            </form>
           </CardContent>
         </Card>
+      ) : (
+        profile?.plan !== "paid" && (
+          <Card className="mt-6">
+            <CardContent className="flex items-center justify-between pt-6">
+              <p className="text-sm text-muted-foreground">
+                Free plan: 1 page, 50 photos, standard QR. Upgrade for multiple
+                pages, unlimited photos, custom links, co-stewards and plaque PDFs.
+              </p>
+              <form action="/api/stripe/checkout" method="POST">
+                <Button type="submit" variant="outline" size="sm">Upgrade</Button>
+              </form>
+            </CardContent>
+          </Card>
+        )
       )}
 
       <div className="mt-8 space-y-4">

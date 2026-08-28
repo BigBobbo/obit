@@ -7,7 +7,8 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { tier0Text, tier0Image } from "@/lib/moderation/tier0";
 import { runModerationPipeline } from "@/lib/moderation/pipeline";
 import { processAndStoreImage, toModerationJpeg } from "@/lib/images";
-import { sendVerificationCode, sendMemoryReceipt } from "@/lib/email";
+import { sendVerificationCode } from "@/lib/email";
+import { notifyContributorOfOutcome } from "@/lib/moderation/contributor-notice";
 import { generateVerificationCode } from "@/lib/ids";
 import { normalizeEmail } from "@/lib/utils";
 import { readContributorCookie, contributorCookieName } from "@/lib/contributor-cookie";
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
   // Page must exist and accept submissions (soft-deleted pages don't).
   const { data: page } = await supabase
     .from("pages")
-    .select("id, name, status")
+    .select("id, name, status, random_id")
     .eq("id", pageId)
     .single();
   if (!page || page.status === "soft_deleted") {
@@ -206,7 +207,14 @@ export async function POST(request: Request) {
         .update({ status: "pending", verification_code: null })
         .eq("id", memory.id);
       const outcome = await runModerationPipeline(memory.id);
-      await sendMemoryReceipt(email, page.name, memory.id, memory.removal_token, outcome === "approved");
+      await notifyContributorOfOutcome({
+        email,
+        pageName: page.name,
+        randomId: page.random_id,
+        memoryId: memory.id,
+        removalToken: memory.removal_token,
+        outcome,
+      });
       return NextResponse.json({ memoryId: memory.id, verified: true, status: outcome });
     }
   }

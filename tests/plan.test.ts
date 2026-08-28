@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { PLAN_LIMITS, limitsFor } from "@/lib/plan";
+import { afterEach, describe, expect, it } from "vitest";
+import { PLAN_LIMITS, allFeaturesFree, effectivePlan, limitsFor } from "@/lib/plan";
+
+afterEach(() => {
+  delete process.env.ALL_FEATURES_FREE;
+});
 
 describe("plan limits", () => {
   it("treats anything that is not 'paid' as free", () => {
@@ -49,5 +53,40 @@ describe("plan limits", () => {
   it("rate-limits page creation on both plans", () => {
     expect(limitsFor("free").pagesPer30Days).toBeGreaterThan(0);
     expect(limitsFor("paid").pagesPer30Days).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Free-for-now (PRD v2 §2.4). Pricing is deferred, not deleted: the flag opens
+ * every fence for everyone while the product is funded, and every fence, Stripe
+ * route and test above stays exactly where it is.
+ */
+describe("ALL_FEATURES_FREE", () => {
+  it("is off unless it is deliberately set", () => {
+    expect(allFeaturesFree()).toBe(false);
+    expect(limitsFor("free")).toEqual(PLAN_LIMITS.free);
+
+    process.env.ALL_FEATURES_FREE = "0";
+    expect(allFeaturesFree()).toBe(false);
+    process.env.ALL_FEATURES_FREE = "";
+    expect(allFeaturesFree()).toBe(false);
+  });
+
+  it("hands everyone the paid limits when it is set", () => {
+    for (const value of ["1", "true"]) {
+      process.env.ALL_FEATURES_FREE = value;
+      expect(allFeaturesFree()).toBe(true);
+      expect(limitsFor("free")).toEqual(PLAN_LIMITS.paid);
+      expect(limitsFor(null)).toEqual(PLAN_LIMITS.paid);
+      expect(effectivePlan("free")).toBe("paid");
+    }
+  });
+
+  /** The fences must still be *there*, so returning to pricing is a config
+   * change rather than an archaeology project. */
+  it("leaves the free limits themselves untouched", () => {
+    process.env.ALL_FEATURES_FREE = "1";
+    expect(PLAN_LIMITS.free.maxPages).toBe(1);
+    expect(PLAN_LIMITS.free.customSlug).toBe(false);
   });
 });

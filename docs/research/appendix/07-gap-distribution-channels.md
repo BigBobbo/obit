@@ -1,0 +1,48 @@
+# GAP: Customer acquisition for an unlisted, noindex memorial product (the missing distribution chapter)
+
+# Acquisition channels for a no-SEO memorial product — findings
+
+## 1. Keeper (mykeeper.com): B2B channel exists, but terms are opaque
+- Keeper (founded 2013) sells B2B to funeral homes, cemeteries, and hospices: API/plugin website integration, import of existing cemetery/obituary records, links to "most funeral home and cemetery management systems for automatic Memorial page creation," plus physical kiosks for cemeteries/mausoleums (https://www.mykeeper.com/funeral-home, https://www.mykeeper.com/hospice). Pitch to the funeral home is revenue ("new revenue streams," e-commerce for flowers/keepsakes/memorial trees, "generate sales leads," web traffic) — i.e., Keeper pays its way by making the funeral home money, not by charging families through the home.
+- **No public deal terms**: no partner pricing, rev-share, or white-label fees are published anywhere I could find; B2B is demo-gated ("Book a Demo"). Could not verify what a funeral home is charged or paid, or how long the channel took to build. Flagged as unverifiable from public sources.
+- Consumer side is one-time-payment, not subscription: free tier (1–2 pages, 5 photos), Keeper Plus $99 one-time, Concierge $350 one-time (https://www.mykeeper.com/pricing). Scale signals: Veterans Legacy Memorial partnership ("over 10 million veterans memorialized") — a B2G distribution coup (https://www.mykeeper.com/funeral-home); two consecutive ICCFA KIP innovation awards (Mar 2026; https://connectingdirectors.com/ search results) — the cemetery/funeral trade-association circuit is where this channel is worked. Trustpilot: only 233 reviews, 4.9★, ~23 in the last 12 months (https://www.trustpilot.com/review/mykeeper.com) — consistent with modest direct-consumer volume despite 13 years of operation; reviewers cite "research" and friend recommendations, not funeral-home referral.
+
+## 2. Turning Hearts: physical-product retail economics, not a platform sale
+- Wholesale page confirms the claimed structure: retail $99.99/medallion; wholesale $44.99 (6–11 units) down to $37.49 (48+), min order 6; each six-pack ships with **a retail counter display stand and 50 brochures** — explicitly targeting "funeral homes, monument companies, cemeteries, florists, and other resellers" (https://turninghearts.com/products/turning-hearts-medallion-wholesale-1). So the funeral home is a *retailer earning ~$55–62 margin per unit*, and the memorial software is free forever ("no subscription fees, ever") — the medallion is the monetization event.
+- Also sold direct on Amazon (multiple listings incl. keychain bundles: https://www.amazon.com/dp/B0C5RB7N9Q); Amazon volume indicators couldn't be scraped.
+- Growth mechanism per a third-party review (Aug 2026): founded ~2020, "gained significant traction on TikTok and Instagram, where families shared the moment they scanned a medallion," plus an Inside Edition feature — organic social/word-of-mouth, not search (https://memorialmerits.com/turning-hearts-review-qr-memorial-medallion/). Volume proxy is small: 140 verified Okendo reviews (4.8★). **No hard unit-volume evidence found anywhere.**
+
+## 3. MuchLoved (UK): funeral director pays a subscription because donations do the selling
+- 2,500+ UK funeral-director branches; 600,000+ tributes; £270M+ raised for charities; 1M+ monthly users (https://funeralprofessionals.muchloved.com/, https://www.muchloved.com/gateway/details-for-funeral-directors/).
+- The FD's value exchange: MuchLoved replaces cash/cheque in-memory donation admin (3.2% processing incl. Gift Aid reclaim), provides funeral-notice pages with service details/maps, widgets that pull traffic to the FD's own website, and FMS integrations. FDs pay **from £40/month; free tier for small independents**. Key insight: the wedge wasn't "memorial pages" — it was **charity-donation logistics**, a chore FDs already had. MuchLoved is a registered charity/social enterprise, which lowers FD resistance. No US equivalent of the Gift-Aid donation wedge exists.
+
+## 4. The incumbent lock
+- Tribute Technology: 9,000+ US funeral homes; Tukios: 10,000+ (of ~15,401 US funeral homes total, ~75% family-owned — https://nfda.org/news/statistics). Both bundle obituary/tribute walls into the funeral home's own website (https://www.tributetech.com/, https://www.tukios.com/). Tribute's 2025–26 obituary study: **3.5B annual obituary-page visits; obituaries get 5x the visits of all other funeral-home pages combined; 75% of visits from organic search/social; funeral homes "lose up to 260 sessions per obituary" to aggregators** (https://www.tributetech.com/tribute-technology-releases-landmark-obituary-study-traffic-engagement-and-industry-threats). Implication: funeral homes are being actively coached that obituary traffic = their revenue and that third parties siphoning it are a threat — a competing memorial *link* is channel-hostile, whereas a *product the home retails* (Turning Hearts) or a *chore-remover* (MuchLoved donations) is channel-compatible. Historical footnote: SCI controlled a memorial-QR patent as early as 2012, and trade press warned homes off third-party QR products (https://connectingdirectors.com, Feb 2012). **No documented case found of a small US memorial-page startup succeeding via funeral-home referral of a standalone link; none clearly documented failing either — absence of evidence, explicitly flagged.**
+
+## 5. Paid acquisition
+- Meta 2025–26 sensitive-category rules restrict personal-attribute/"personal struggles" messaging ("do you struggle with…" second-person is disallowed) but **death/bereavement/funeral services is not an enumerated restricted category** (https://www.wetracked.io/post/meta-ads-new-sensitive-categories-restrictions; https://www.inbeat.co/articles/meta-advertising-policies/). Google's personalized-ads policy restricts advertiser-curated audiences (customer match/lookalikes) for hardship categories but allows in-market/life-event/demographic targeting (https://support.google.com/adspolicy/answer/143465). Net: memorial ads are runnable but can't be precision-grief-targeted; no CAC benchmarks for memorial products were findable. Turning Hearts' organic-social loop (scan-moment videos) is the only demonstrated paid/social-adjacent success.
+
+## 6. How families choose in the death week
+- No NFDA study on memorial-site selection specifically was found; the 2025 Consumer Awareness & Preferences Report covers venue/green trends, not platform choice (https://nfda.org/news/statistics). Best available proxy: Tribute's data — the family's touchpoint is the funeral home's obituary page, found via Google/social within ~2 days of death. Keeper's Trustpilot corpus suggests DIY research + friend referral for family-direct signups.
+
+## Relevance to Memorial Pages
+The three working channels compatible with unlisted-by-design are: (a) **physical product retail** (QR plaque as the funeral home's/monument dealer's margin item — Turning Hearts' exact model, and this product already makes plaque PDFs); (b) **chore-removal B2B** (MuchLoved's donation wedge — needs a US analog); (c) **institutional/association distribution** (Keeper's ICCFA/VLM route). Handing homes a competing *link* against bundled Tribute/Tukios walls has no documented precedent of success.
+
+## Sources
+- [Keeper for Funeral Homes](https://www.mykeeper.com/funeral-home)
+- [Keeper Pricing & Plans](https://www.mykeeper.com/pricing)
+- [Keeper Memorials on Trustpilot (233 reviews)](https://www.trustpilot.com/review/mykeeper.com)
+- [Turning Hearts Medallion — Wholesale product page (pricing tiers, display stand, brochures)](https://turninghearts.com/products/turning-hearts-medallion-wholesale-1)
+- [Turning Hearts Wholesale program page](https://turninghearts.com/pages/wholesale-page)
+- [Turning Hearts QR Memorial Medallion — Amazon listing](https://www.amazon.com/Turning-Hearts-Grave-Medallion-Weather-Proof/dp/B0C5RB7N9Q)
+- [Turning Hearts Medallion Review (Memorial Merits, Aug 2026)](https://memorialmerits.com/turning-hearts-review-qr-memorial-medallion/)
+- [MuchLoved — Funeral Director Tribute Pages & Donations (2,500+ branches)](https://funeralprofessionals.muchloved.com/)
+- [MuchLoved — Details for Funeral Directors (from £40/month, 3.2% donation fee)](https://www.muchloved.com/gateway/details-for-funeral-directors/)
+- [Tribute Technology — Landmark Obituary Study (3.5B visits, aggregator threat)](https://www.tributetech.com/tribute-technology-releases-landmark-obituary-study-traffic-engagement-and-industry-threats)
+- [Tribute Technology — home (9,000+ funeral homes)](https://www.tributetech.com/)
+- [Tukios — home (10,000+ funeral homes)](https://www.tukios.com/)
+- [NFDA Statistics (15,401 US funeral homes; 2025 Consumer Awareness & Preferences Report)](https://nfda.org/news/statistics)
+- [Google Ads — Personalized advertising policy (sensitive interest categories)](https://support.google.com/adspolicy/answer/143465)
+- [Meta Ads Sensitive Categories Restrictions 2026 (wetracked.io)](https://www.wetracked.io/post/meta-ads-new-sensitive-categories-restrictions)
+- [Connecting Directors — QR memorial / Keeper KIP award search results (incl. 2012 SCI QR patent warning)](https://connectingdirectors.com/?s=QR+code+memorial)
+- [Funeral Director Daily — memorial website coverage (Tukios, Tribute, Cumulus)](https://www.funeraldirectordaily.com/?s=memorial+website)

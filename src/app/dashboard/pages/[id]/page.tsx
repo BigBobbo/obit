@@ -6,13 +6,36 @@ import { ModerationQueue } from "@/components/moderation-queue";
 import { MemoryReports, type ReportedMemory } from "@/components/memory-reports";
 import { StewardRequestsPanel } from "@/components/steward-requests-panel";
 import { PageSettings } from "@/components/page-settings";
+import { PrivacySettings } from "@/components/privacy-settings";
+import { AccessRequestsPanel, type AccessRequestCard } from "@/components/access-requests-panel";
+import { EventsPanel, type StewardEvent } from "@/components/events-panel";
+import { ShareSheet } from "@/components/share-sheet";
+import { GivingPanel } from "@/components/giving-panel";
+import { loadGivingAdmin } from "@/lib/giving/queries";
+import { givingEnabled, givingPartner } from "@/lib/giving/partner";
+import { nextServiceLine, type EventRecord } from "@/lib/events";
+import {
+  formatLatency,
+  LATENCY_TARGET_HOURS,
+  medianHours,
+  toLatencySamples,
+  type DecisionRow,
+} from "@/lib/latency";
 import { QrPanel } from "@/components/qr-panel";
 import { StewardsPanel } from "@/components/stewards-panel";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
+import { effectivePlan } from "@/lib/plan";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
+
+// Single string literals: supabase-js infers row types from the select text, and
+// a concatenated string collapses every column to `unknown`.
+const PAGE_COLUMNS =
+  "id, random_id, slug, name, date_of_birth, date_of_death, bio, status, review_everything, auto_publish_optout, access_mode, access_code_hash, access_code_rotated_at, announcement_enabled, announcement_text";
+const EVENT_COLUMNS =
+  "id, kind, title, starts_at, tz, venue, locality, map_url, livestream_url, notes, on_announcement, rsvp_enabled, event_rsvps(id, name, party_size, created_at)";
 
 export default async function ManagePage({
   params,
@@ -45,9 +68,7 @@ export default async function ManagePage({
 
   const { data: page } = await admin
     .from("pages")
-    .select(
-      "id, random_id, slug, name, date_of_birth, date_of_death, bio, status, review_everything, auto_publish_optout",
-    )
+    .select(PAGE_COLUMNS)
     .eq("id", id)
     .single();
   if (!page) notFound();
@@ -58,6 +79,16 @@ export default async function ManagePage({
     .eq("page_id", id)
     .eq("status", "pending")
     .order("created_at", { ascending: true });
+
+  // Approval latency (PRD v2 §2.3): the last hundred decisions this page made.
+  const { data: decisions } = await admin
+    .from("memories")
+    .select("created_at, decided_at, moderation_scores")
+    .eq("page_id", id)
+    .not("decided_at", "is", null)
+    .order("decided_at", { ascending: false })
+    .limit(100);
+  const latency = medianHours(toLatencySamples((decisions ?? []) as DecisionRow[]));
 
   const { data: stewards } = await admin
     .from("stewards")
@@ -112,6 +143,57 @@ export default async function ManagePage({
     memory: (r.memory_id && memoriesById.get(r.memory_id)) || null,
   }));
 
+  // The access queue (PRD v2 §1.1). Unverified requests are deliberately shown
+  // too — a steward may recognise the name and let them in before they click.
+  const { data: accessRequests } = await admin
+    .from("access_requests")
+    .select("id, name, email, relationship, created_at, verified_at")
+    .eq("page_id", id)
+    .eq("status", "pending")
+    .order("created_at", { ascending: true });
+
+  const { count: preapprovedCount } = await admin
+    .from("access_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("page_id", id)
+    .eq("status", "preapproved");
+
+  const { data: events } = await admin
+    .from("events")
+    .select(EVENT_COLUMNS)
+    .eq("page_id", id)
+    .order("starts_at", { ascending: true });
+
+  const stewardEvents: StewardEvent[] = (events ?? []).map((e) => {
+    const rsvps = (e.event_rsvps ?? []) as {
+      id: string;
+      name: string;
+      party_size: number;
+      created_at: string;
+    }[];
+    return {
+      id: e.id as string,
+      kind: e.kind as string,
+      title: e.title as string,
+      starts_at: e.starts_at as string,
+      tz: e.tz as string,
+      venue: e.venue as string | null,
+      locality: e.locality as string | null,
+      map_url: e.map_url as string | null,
+      livestream_url: e.livestream_url as string | null,
+      notes: e.notes as string | null,
+      on_announcement: e.on_announcement as boolean,
+      rsvp_enabled: e.rsvp_enabled as boolean,
+      rsvpCount: rsvps.length,
+      rsvpGuests: rsvps.reduce((sum, r) => sum + (r.party_size ?? 1), 0),
+      rsvps: [...rsvps]
+        .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""))
+        .map((r) => ({ id: r.id, name: r.name, partySize: r.party_size ?? 1 })),
+    };
+  });
+
+  const giving = givingEnabled() ? await loadGivingAdmin(id) : null;
+
   const { data: stewardRequests } = await admin
     .from("steward_requests")
     .select("id, requester_name, requester_email, relationship, message, status, created_at")
@@ -141,6 +223,14 @@ export default async function ManagePage({
 
       <section className="mt-10">
         <h2 className="font-serif text-xl">Waiting for your review ({pending?.length ?? 0})</h2>
+        {latency !== null && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            You usually reply in <strong>{formatLatency(latency)}</strong>.{" "}
+            {latency <= LATENCY_TARGET_HOURS
+              ? "People who hear back quickly are the ones who write again."
+              : "A memory that sits unanswered is usually the last one that person writes."}
+          </p>
+        )}
         <div className="mt-4">
           <ModerationQueue
             memories={(pending ?? []).map((m) => ({
@@ -198,9 +288,96 @@ export default async function ManagePage({
       )}
 
       <section className="mt-10">
+        <h2 className="font-serif text-xl">Services and events</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Times, places and a calendar link. Past services fade to a single line
+          on the page once they have happened.
+        </p>
+        <div className="mt-4">
+          <EventsPanel pageId={page.id} events={stewardEvents} />
+        </div>
+      </section>
+
+      {page.access_mode === "approved" && (
+        <section className="mt-10">
+          <h2 className="font-serif text-xl">
+            Asking for access ({accessRequests?.length ?? 0})
+          </h2>
+          <div className="mt-4">
+            <AccessRequestsPanel
+              pageId={page.id}
+              preapprovedCount={preapprovedCount ?? 0}
+              requests={(accessRequests ?? []).map(
+                (r): AccessRequestCard => ({
+                  id: r.id,
+                  name: r.name,
+                  email: r.email,
+                  relationship: r.relationship,
+                  createdAt: r.created_at,
+                  verifiedAt: r.verified_at,
+                }),
+              )}
+            />
+          </div>
+        </section>
+      )}
+
+      {giving && (
+        <section className="mt-10">
+          <h2 className="font-serif text-xl">In lieu of flowers</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Name up to three registered charities. People give directly to them
+            through {givingPartner()?.displayName ?? "our partner"} — the money
+            never passes through us and we take none of it.
+          </p>
+          <div className="mt-4 rounded-lg border border-border bg-card p-6">
+            <GivingPanel
+              pageId={page.id}
+              partnerName={givingPartner()?.displayName ?? "our partner"}
+              charities={giving.charities}
+              donations={giving.donations}
+            />
+          </div>
+        </section>
+      )}
+
+      <section className="mt-10">
+        <h2 className="font-serif text-xl">Share this page</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Prewritten words you can edit. The week of the funeral is when a
+          memorial actually travels.
+        </p>
+        <div className="mt-4 rounded-lg border border-border bg-card p-6">
+          <ShareSheet
+            url={`${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/m/${page.random_id}`}
+            pageName={page.name}
+            nextService={nextServiceLine(stewardEvents as EventRecord[])}
+            codeEntry={page.access_mode === "code"}
+            pageRef={page.random_id}
+            surface="steward"
+          />
+        </div>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="font-serif text-xl">Privacy</h2>
+        <div className="mt-4">
+          <PrivacySettings
+            pageId={page.id}
+            initial={{
+              accessMode: (page.access_mode ?? "link") as "link" | "code" | "approved",
+              hasCode: Boolean(page.access_code_hash),
+              announcementEnabled: page.announcement_enabled,
+              announcementText: page.announcement_text ?? "",
+            }}
+          />
+        </div>
+      </section>
+
+      <section className="mt-10">
         <h2 className="font-serif text-xl">QR code</h2>
         <div className="mt-4">
-          <QrPanel pageId={page.id} randomId={page.random_id} paid={profile?.plan === "paid"} />
+          <QrPanel pageId={page.id} randomId={page.random_id} paid={effectivePlan(profile?.plan) === "paid"} />
         </div>
       </section>
 
@@ -234,7 +411,7 @@ export default async function ManagePage({
               reviewEverything: page.review_everything,
               autoPublishOptout: page.auto_publish_optout,
             }}
-            paid={profile?.plan === "paid"}
+            paid={effectivePlan(profile?.plan) === "paid"}
           />
         </div>
       </section>

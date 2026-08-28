@@ -23,6 +23,16 @@ begin
 end
 $$;
 
+-- Supabase hands the API roles blanket privileges on everything created in
+-- `public` afterwards, and leaves RLS to do the actual gatekeeping. Reproduced
+-- here because a migration that *narrows* a grant — 0005 takes the access code
+-- hash away from anon — is a no-op against a database where the grant was
+-- never there, and would pass CI while doing nothing in production.
+grant usage on schema public to anon, authenticated, service_role;
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+
 -- auth schema: only the columns our trigger and foreign keys touch.
 create schema if not exists auth;
 

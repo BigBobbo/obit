@@ -6,9 +6,16 @@ import { incrementApprovedCount } from "@/lib/moderation/pipeline";
 import { touchStewardActivity } from "@/lib/audit";
 import { removeMemory } from "@/lib/moderation/removal";
 import { stewardActionAllowed, actionConflictMessage } from "@/lib/memories";
+import { resolveDeclineReason } from "@/lib/decline-templates";
+import { sendMemoryDeclined } from "@/lib/email";
 
 const schema = z.object({
   action: z.enum(["approve", "reject", "reject_and_block"]),
+  // Every decline carries a human-readable reason (PRD v2 §2.3). A steward
+  // picks a template or writes their own; neither the UI nor this route has a
+  // path that produces a silent rejection.
+  declineTemplate: z.string().max(50).optional(),
+  declineReason: z.string().max(1000).optional(),
 });
 
 /**
@@ -53,17 +60,26 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     );
   }
 
+  const now = new Date().toISOString();
+
   if (action === "approve") {
     await admin
       .from("memories")
       .update({
         status: "approved",
         approved_by: user.id,
-        approved_at: new Date().toISOString(),
+        approved_at: now,
+        // Half of the approval-latency clock (PRD v2 §2.3): latency is the
+        // conversion risk here, so it is measured before it is optimised.
+        decided_at: now,
       })
       .eq("id", id);
     await incrementApprovedCount(memory.contributor_email);
   } else {
+    const reason = resolveDeclineReason({
+      templateId: parsed.data.declineTemplate,
+      custom: parsed.data.declineReason,
+    });
     await removeMemory(id, {
       revokeApproval: true,
       blockContributorOnPage:
@@ -71,13 +87,30 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
           ? { pageId: memory.page_id, email: memory.contributor_email }
           : undefined,
     });
+    await admin
+      .from("memories")
+      .update({ decided_at: now, decline_reason: reason })
+      .eq("id", id);
+
+    // The contributor hears why. Never a bare rejection.
+    const { data: page } = await admin
+      .from("pages")
+      .select("name, random_id")
+      .eq("id", memory.page_id)
+      .single();
+    await sendMemoryDeclined(memory.contributor_email, {
+      pageName: (page?.name as string) ?? "the memorial page",
+      reason,
+      randomId: (page?.random_id as string) ?? null,
+    });
+
     // Removing a published memory settles any open steward report about it.
     await admin
       .from("reports")
       .update({
         status: "resolved",
         resolution: "Memory removed by a steward.",
-        resolved_at: new Date().toISOString(),
+        resolved_at: now,
       })
       .eq("memory_id", id)
       .eq("status", "steward");
