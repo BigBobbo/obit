@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { incrementApprovedCount } from "@/lib/moderation/pipeline";
 import { touchStewardActivity } from "@/lib/audit";
+import { deleteMemoryPhotos } from "@/lib/images";
 
 const schema = z.object({
   action: z.enum(["approve", "reject", "reject_and_block"]),
@@ -55,6 +56,9 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     await incrementApprovedCount(memory.contributor_email);
   } else {
     await admin.from("memories").update({ status: "rejected" }).eq("id", id);
+    // Renditions live in a public bucket, so the bytes have to go too — a
+    // status change alone leaves rejected photos fetchable by URL.
+    await deleteMemoryPhotos(id);
     if (action === "reject_and_block") {
       await admin.from("contributor_page_blocks").upsert({
         page_id: memory.page_id,
