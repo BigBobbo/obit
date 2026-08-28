@@ -5,7 +5,8 @@
 do $$
 declare
   expected text[] := array[
-    'audit_log', 'bans', 'contributor_page_blocks', 'contributors',
+    'access_requests', 'audit_log', 'bans', 'contributor_page_blocks',
+    'contributors', 'event_rsvps', 'events',
     'memories', 'moderation_config', 'pages', 'photos',
     'processed_stripe_events', 'profiles', 'rate_limits', 'reports',
     'steward_requests', 'stewards'
@@ -205,6 +206,144 @@ begin
 
   delete from public.pages where id = fixture_page;
   delete from auth.users where id = fixture_user;
+end
+$$;
+
+-- 0005's access model. The whole v2 privacy story rests on these columns and on
+-- the two policies below; a migration that dropped either would silently return
+-- a gated page to "the URL is the secret".
+do $$
+declare
+  expected text[] := array[
+    'announcement_enabled', 'announcement_text', 'access_mode',
+    'access_code_hash', 'access_code_rotated_at'
+  ];
+  missing text[];
+begin
+  select array_agg(c) into missing
+  from unnest(expected) c
+  where not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'pages' and column_name = c
+  );
+  if missing is not null then
+    raise exception 'pages is missing access columns: %', missing;
+  end if;
+end
+$$;
+
+-- Reading a gated page must not be a public read. Both policies have to filter
+-- on access_mode; without it the anon key still returns every memory.
+do $$
+declare
+  memories_qual text;
+  photos_qual text;
+begin
+  select qual into memories_qual from pg_policies
+  where schemaname = 'public' and tablename = 'memories' and policyname = 'memories: public read approved';
+  select qual into photos_qual from pg_policies
+  where schemaname = 'public' and tablename = 'photos' and policyname = 'photos: public read';
+
+  if memories_qual is null or memories_qual not like '%access_mode%' then
+    raise exception 'the memories public-read policy no longer checks access_mode: %', memories_qual;
+  end if;
+  if photos_qual is null or photos_qual not like '%access_mode%' then
+    raise exception 'the photos public-read policy no longer checks access_mode: %', photos_qual;
+  end if;
+end
+$$;
+
+-- Access modes, the code-mode backstop, one live request per person per page,
+-- and the event/RSVP shape — on a fixture this block creates and removes.
+do $$
+declare
+  fixture_user uuid := '88888888-8888-8888-8888-888888888888';
+  fixture_page uuid;
+  fixture_event uuid;
+begin
+  insert into auth.users (id, email) values (fixture_user, 'access-check@example.com')
+  on conflict (id) do nothing;
+
+  insert into public.pages (random_id, name, date_of_birth, date_of_death, created_by)
+  values ('AccessCheck1', 'Access Check', '1940-01-01', '2020-01-01', fixture_user)
+  returning id into fixture_page;
+
+  if (select access_mode from public.pages where id = fixture_page) <> 'link' then
+    raise exception 'new pages must default to link mode';
+  end if;
+
+  -- Code mode without a code would lock the family out of their own page.
+  begin
+    update public.pages set access_mode = 'code' where id = fixture_page;
+    raise exception 'code mode was allowed with no access_code_hash';
+  exception when check_violation then
+    null; -- expected
+  end;
+
+  update public.pages
+     set access_mode = 'code', access_code_hash = 'scrypt$deadbeef$cafe',
+         access_code_rotated_at = now()
+   where id = fixture_page;
+
+  begin
+    update public.pages set access_mode = 'nonsense' where id = fixture_page;
+    raise exception 'an unknown access mode was accepted';
+  exception when check_violation then
+    null; -- expected
+  end;
+
+  -- One access request per person per page, in either direction.
+  insert into public.access_requests (page_id, email, name, status)
+  values (fixture_page, 'access-check@example.com', 'Access Check', 'preapproved');
+  begin
+    insert into public.access_requests (page_id, email, name)
+    values (fixture_page, 'access-check@example.com', 'Access Check');
+    raise exception 'a second access request was allowed for the same email';
+  exception when unique_violation then
+    null; -- expected
+  end;
+
+  if (select verify_token from public.access_requests
+      where page_id = fixture_page and email = 'access-check@example.com') is null then
+    raise exception 'access_requests.verify_token did not default to a token';
+  end if;
+
+  insert into public.events (page_id, kind, title, starts_at, tz, venue)
+  values (fixture_page, 'service', 'Funeral service', now() + interval '2 days',
+          'America/New_York', 'St Anne''s, Rye')
+  returning id into fixture_event;
+
+  begin
+    insert into public.event_rsvps (event_id, name, party_size)
+    values (fixture_event, 'A friend', 99);
+    raise exception 'an out-of-range party size was accepted';
+  exception when check_violation then
+    null; -- expected
+  end;
+
+  insert into public.event_rsvps (event_id, name, party_size) values (fixture_event, 'A friend', 3);
+
+  delete from public.pages where id = fixture_page;
+  delete from auth.users where id = fixture_user;
+end
+$$;
+
+-- Approval latency needs both ends of the clock, and a decline needs somewhere
+-- to carry its reason.
+do $$
+declare
+  expected text[] := array['decided_at', 'decline_reason'];
+  missing text[];
+begin
+  select array_agg(c) into missing
+  from unnest(expected) c
+  where not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'memories' and column_name = c
+  );
+  if missing is not null then
+    raise exception 'memories is missing columns: %', missing;
+  end if;
 end
 $$;
 
