@@ -7,8 +7,36 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 const COOKIE_NAME = "mp_contributor";
 const MAX_AGE_S = 60 * 60 * 24 * 180; // 6 months
 
+/**
+ * The HMAC key for the returning-contributor cookie. That cookie is what lets a
+ * contributor skip email verification, so a guessable key is a bypass of the
+ * whole verification step — hence no silent fallback in production.
+ *
+ * In development an unset key falls back to a fixed dev-only value and says so,
+ * so `npm run dev` works out of the box against a local Supabase.
+ */
+const DEV_SECRET = "insecure-development-only-secret";
+let warnedAboutDevSecret = false;
+
 function secret(): string {
-  return process.env.CONTRIBUTOR_COOKIE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "dev";
+  const configured = process.env.CONTRIBUTOR_COOKIE_SECRET;
+  if (configured) return configured;
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "CONTRIBUTOR_COOKIE_SECRET is not set. Generate one with `openssl rand -base64 32` " +
+        "and set it in the environment — without it the returning-contributor cookie is forgeable.",
+    );
+  }
+
+  if (!warnedAboutDevSecret) {
+    warnedAboutDevSecret = true;
+    console.warn(
+      "CONTRIBUTOR_COOKIE_SECRET not set; using the development-only key. " +
+        "Set a real one before deploying.",
+    );
+  }
+  return DEV_SECRET;
 }
 
 function sign(payload: string): string {
