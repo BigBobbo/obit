@@ -237,6 +237,8 @@ async function FullMemorial({ page, steward }: { page: PageRecord; steward: bool
             pageName={page.name}
             nextService={nextServiceLine((events ?? []) as EventRecord[])}
             codeEntry={steward && page.access_mode === "code"}
+            pageRef={page.random_id}
+            surface="memorial"
           />
         </div>
       </section>
@@ -354,6 +356,8 @@ async function GatedMemorial({
               url={url}
               pageName={page.name}
               nextService={nextServiceLine((events ?? []) as EventRecord[])}
+              pageRef={page.random_id}
+              surface="announcement"
             />
           </div>
         </section>

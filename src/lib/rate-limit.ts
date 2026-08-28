@@ -51,6 +51,8 @@ export const RATE_LIMITS = {
   accessRequestPerPagePerDay: { max: 50, window: DAY },
   // Charity search proxies a partner API key, so it is metered per steward.
   charitySearchPerUserPerHour: { max: 60, window: 3600 },
+  // Share-sheet taps. Generous — a family really does share a lot in week one.
+  shareMetricPerIpPerDay: { max: 100, window: DAY },
   // RSVPs: a head count, not a guest book — generous, but not a spam vector.
   rsvpPerIpPerDay: { max: 10, window: DAY },
   rsvpPerEventPerDay: { max: 200, window: DAY },

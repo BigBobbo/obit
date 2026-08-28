@@ -24,11 +24,16 @@ export function ShareSheet({
   pageName,
   nextService,
   codeEntry = false,
+  pageRef,
+  surface = "memorial",
 }: {
   url: string;
   pageName: string;
   nextService?: string | null;
   codeEntry?: boolean;
+  /** The page's random_id, for the share-tap count (PRD v2 §7). */
+  pageRef?: string;
+  surface?: "announcement" | "memorial" | "steward";
 }) {
   const [message, setMessage] = useState(() => defaultShareMessage({ pageName, url, nextService }));
   const [code, setCode] = useState("");
@@ -36,7 +41,20 @@ export function ShareSheet({
 
   const fullMessage = code.trim() ? `${message}\nAccess code: ${code.trim()}` : message;
 
+  // A tap is the metric (PRD v2 §7). Fire-and-forget, and never in the way of
+  // the thing the person actually pressed the button to do.
+  function count(action: "share" | "copy_link" | "copy_message") {
+    if (!pageRef) return;
+    void fetch("/api/metrics/share", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pageRef, surface, action }),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
   async function copy(what: "link" | "message") {
+    count(what === "link" ? "copy_link" : "copy_message");
     try {
       await navigator.clipboard.writeText(what === "link" ? url : fullMessage);
       setCopied(what);
@@ -51,6 +69,7 @@ export function ShareSheet({
       await copy("message");
       return;
     }
+    count("share");
     try {
       await navigator.share({ title: `In memory of ${pageName}`, text: fullMessage, url });
     } catch {

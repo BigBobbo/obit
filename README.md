@@ -1,15 +1,35 @@
 # Memorial Pages
 
-A web app where families create **unlisted memorial pages** for deceased loved
-ones. Visitors reach a page via a shared link or a QR code at the grave and can
-contribute photos and written memories. Family-moderated, built to resist abuse
-with near-zero platform-side ops.
+A web app where families create **private memorial pages** for deceased loved
+ones, with an optional **public announcement** for the funeral week. Visitors
+reach a page via a shared link or a QR code at the grave; the family chooses who
+can read the memories. Family-moderated, built to resist abuse with near-zero
+platform-side ops.
 
 Built per the PRD: Next.js (App Router) + TypeScript · Supabase (Postgres +
 RLS, magic-link auth, Storage) · sharp · Claude API (Haiku) · Sightengine ·
 Stripe · Resend · `qrcode` · Cloudflare Turnstile · Tailwind.
 
 ## Feature map
+
+### v2 — access, the week-one kit, and giving
+
+Built against [`docs/PRD-v2.md`](docs/PRD-v2.md); the decisions, deviations and
+what was deliberately left unbuilt are in
+[`docs/PRD-v2-implementation.md`](docs/PRD-v2-implementation.md).
+
+| PRD v2 section | Where |
+|---|---|
+| Access modes (`link` / `code` / `approved`) and the visitor cookie | `src/lib/access.ts`, `src/lib/access-server.ts` |
+| Code entry, access requests, pre-approval, silent declines | `src/app/api/pages/[id]/access/`, `src/app/m/[slug]/access/verify/` |
+| Announcement surface and the gate | `src/app/m/[slug]/page.tsx`, `src/components/access-gate.tsx` |
+| Services, RSVP and `.ics` | `src/lib/events.ts`, `src/components/event-block.tsx`, `src/app/api/events/` |
+| Share card (OG image) and share sheet | `src/app/api/og/[pageId]/`, `src/components/share-sheet.tsx` |
+| Guided prompts, kind declines, approval latency | `src/lib/prompts.ts`, `src/lib/decline-templates.ts`, `src/lib/latency.ts` |
+| Charity giving, and its compliance checklist | `src/lib/giving/`, [`docs/giving-compliance.md`](docs/giving-compliance.md) |
+| Free-for-now (`ALL_FEATURES_FREE`) | `src/lib/plan.ts` |
+
+### v1 — the MVP underneath
 
 | PRD section | Where |
 |---|---|
@@ -40,6 +60,9 @@ Stripe · Resend · `qrcode` · Cloudflare Turnstile · Tailwind.
    - `supabase/migrations/0001_init.sql`
    - `supabase/migrations/0002_storage.sql`
    - `supabase/migrations/0003_hardening.sql`
+   - `supabase/migrations/0004_report_lifecycle.sql`
+   - `supabase/migrations/0005_access_and_week_one.sql`
+   - `supabase/migrations/0006_giving.sql`
 3. Auth → Providers: enable **Email** with magic links (disable passwords).
    Set the Site URL to your deployment URL and add
    `https://<your-domain>/auth/callback` to the redirect allowlist.
@@ -61,10 +84,19 @@ silent failure that nothing alerts on, so production refuses the request
 instead. **Set both before deploying, or the live site will turn contributors
 away.**
 
-`CONTRIBUTOR_COOKIE_SECRET` likewise has no safe default. It signs the
-cookie that lets a returning contributor skip email verification, so the app
-refuses to sign or read that cookie in production without it. Generate one with
+`CONTRIBUTOR_COOKIE_SECRET` likewise has no safe default. It signs two bearer
+cookies — the one that lets a returning contributor skip email verification, and
+the per-page one that opens a gated memorial — so the app refuses to sign or
+read either in production without it. Generate one with
 `openssl rand -base64 32`.
+
+`ALL_FEATURES_FREE=1` opens every plan fence for everyone (PRD v2 §2.4).
+Pricing is deferred, not deleted: the fences, the Stripe routes and their tests
+all stay in place, so coming back to pricing is a config change.
+
+Charity giving is **off** unless `GIVING_PARTNER` and the partner keys are set,
+and it should stay off until the launch checklist in
+[`docs/giving-compliance.md`](docs/giving-compliance.md) is complete.
 
 ### 3. Run
 
@@ -84,11 +116,13 @@ supabase db reset       # applies migrations/*.sql in order, then seed.sql
 ```
 
 `supabase/config.toml` configures ports and passwordless magic-link auth.
-`supabase/seed.sql` creates a demo admin steward (`steward@example.com`), a
-browsable memorial page, and a pending memory so the moderation queue isn't
-empty. Sign in by requesting a magic link for that address and opening it in
-Inbucket at <http://localhost:54324>. Point `.env.local` at the local URLs and
-keys that `supabase start` prints.
+`supabase/seed.sql` creates a demo admin steward (`steward@example.com`), an
+open memorial page with a pending memory so the moderation queue isn't empty,
+and a **code-gated page with an announcement and three services** so the gate,
+the announcement view and the service block are all browsable. Its access code
+is `nana-rose`. Sign in by requesting a magic link for that address and opening
+it in Inbucket at <http://localhost:54324>. Point `.env.local` at the local URLs
+and keys that `supabase start` prints.
 
 ### 4. Deploy (Vercel)
 
@@ -112,6 +146,16 @@ keys that `supabase start` prints.
    `customer.subscription.deleted`; put its secret in `STRIPE_WEBHOOK_SECRET`.
 3. Enable the Customer Portal in the Stripe dashboard.
 
+### 6. Charity giving (optional, and gated on a checklist)
+
+Giving stays off until `GIVING_PARTNER`, `EVERY_ORG_API_KEY` and
+`EVERY_ORG_WEBHOOK_TOKEN` are all set — and it should stay off until every box
+in [`docs/giving-compliance.md`](docs/giving-compliance.md) is ticked by a
+person. The three constraints the design rests on are not preferences: named
+verified 501(c)(3) charities only, 0% platform fee, and **we never hold funds**.
+Register the partner webhook against `POST /api/giving/webhook` with the same
+token you put in `EVERY_ORG_WEBHOOK_TOKEN`.
+
 ## Tests
 
 ```bash
@@ -134,6 +178,10 @@ The suite covers the decisions that have to be right when nobody is watching:
 | Which steward actions a memory accepts in each state | `tests/memories.test.ts` |
 | Co-steward request approval state machine | `tests/steward-requests.test.ts` |
 | Safety integrations failing closed in production | `tests/fail-closed.test.ts` |
+| Access codes, the visitor cookie, and who the gate admits | `tests/access.test.ts` |
+| Events: timezone arithmetic, past-event recession, `.ics` escaping and folding | `tests/events.test.ts` |
+| Prompts, decline reasons that are never empty, approval latency | `tests/moderation-as-care.test.ts` |
+| Giving: webhook authentication, donor-wall routing, the fundraising block | `tests/giving.test.ts` |
 
 `tests/helpers/supabase-stub.ts` is a small in-memory stand-in for the
 supabase-js query builder, so the pipeline tests run without Postgres. Anything
@@ -204,6 +252,30 @@ A report is never allowed to disappear quietly (PRD §4.6):
 `src/lib/reports.ts` holds those rules as pure functions; `tests/reports.test.ts`
 covers the boundaries.
 
+## Access modes (PRD v2 §1)
+
+A steward chooses, per page, who can read the memories:
+
+| Mode | Who gets in | For |
+|---|---|---|
+| `link` *(default)* | anyone with the URL | today's behaviour, unchanged |
+| `code` | anyone who enters the family's short code | a wide announcement with a soft gate |
+| `approved` | people the steward admits, or pre-approved emails | contested families, public deaths, minors |
+
+Three properties are worth knowing before changing any of it:
+
+- **The code is a soft gate and the UI says so.** It stops strangers, scrapers
+  and obituary-pirates; it does not stop somebody who was told the code.
+- **Access gates reading; the pipeline gates writing.** Sharing a memory needs
+  email verification and full moderation in every mode, and reporting is
+  reachable from every surface including the gate.
+- **The anon key is public.** Anything an anon `select` can reach is effectively
+  published, which is why `access_code_hash` and `bio` are revoked from the
+  grant, `donations` has no read policy at all, and gated pages serve
+  contributed photos through an access-checked route rather than the public
+  storage bucket. `supabase/tests/schema-assertions.sql` runs those queries as
+  `anon` and fails if any of them starts returning rows.
+
 ## Private beta
 
 Set `BETA_INVITE_CODES=code1,code2` to require an invite code at signup.
@@ -227,4 +299,33 @@ Existing accounts always get in. Leave empty to open signups.
 - **Phone/URL in guest text**: rejected by Tier 0 with a friendly message
   before any moderation or storage.
 - **Free-plan fences**: second page, custom slug, plaque PDF and co-stewards
-  are blocked server-side (`plan_limit` errors), not just hidden in the UI.
+  are blocked server-side (`plan_limit` errors), not just hidden in the UI —
+  and open for everyone while `ALL_FEATURES_FREE=1`.
+
+### PRD v2 Phase 1
+
+- **A `code` page shows a stranger the announcement, the memories after code
+  entry, and survives a restart but not a rotation**: the visitor cookie is
+  persistent (180 days) and carries the code's rotation timestamp inside its
+  signature, so rotating the code invalidates every cookie minted under the old
+  one. `tests/access.test.ts`.
+- **A pre-approved email is admitted straight after verification; an unknown
+  one lands in the queue; declines are silent**: one emailed link both proves
+  the address and opens the page once the family says yes. Declining sends
+  nothing, and a declined requester keeps seeing the same neutral sentence as
+  everyone else — including when they ask again.
+- **No cookie-less request retrieves memory text or contributed photos from a
+  gated page, including the OG image**: RLS filters `memories` and `photos` on
+  the page's access mode (asserted by running the query as `anon` in
+  `supabase/tests/schema-assertions.sql`), gated pages serve photos through an
+  access-checked route instead of the public bucket, and the OG image route
+  renders announcement fields only. One honest limit: a rendition URL somebody
+  saved while a page was open keeps working after it is gated — the privacy
+  settings say so rather than letting a family assume otherwise.
+- **Code entry and RSVP on a 320 px phone**: single fields at `h-14`/`h-12`
+  with 18–24 px type, full-width buttons above the 44 px touch target, and no
+  interaction that needs two hands.
+- **Every submission acknowledged, every decline explained**: the acknowledgment
+  is on the form and in the receipt email; `resolveDeclineReason()` has no input
+  that yields an empty reason, and the auto-rejected and reported paths carry
+  their own wording.

@@ -345,6 +345,8 @@ export default async function ManagePage({
             pageName={page.name}
             nextService={nextServiceLine(stewardEvents as EventRecord[])}
             codeEntry={page.access_mode === "code"}
+            pageRef={page.random_id}
+            surface="steward"
           />
         </div>
       </section>
