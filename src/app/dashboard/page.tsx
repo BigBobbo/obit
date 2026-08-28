@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import { logEvent } from "@/lib/audit";
+import { touchStewardActivityForPages } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +23,6 @@ export default async function DashboardPage() {
     .select("role, pages!inner(id, random_id, name, status, date_of_birth, date_of_death)")
     .eq("user_id", user.id);
 
-  // Dashboard visit = steward activity for the 90-day clock on every page.
   const pages = (stewardships ?? []).map((s) => ({
     role: s.role,
     page: s.pages as unknown as {
@@ -35,11 +34,17 @@ export default async function DashboardPage() {
       date_of_death: string;
     },
   }));
-  if (pages.length > 0) {
-    const now = new Date().toISOString();
-    const ids = pages.map((p) => p.page.id);
-    await admin.from("pages").update({ last_steward_activity_at: now }).in("id", ids);
-    await logEvent({ actorUserId: user.id, action: "dashboard_visit" });
+  // Visiting the dashboard is steward activity: it resets the 90-day clock on
+  // every page and lifts any inactivity hold (PRD §2).
+  await touchStewardActivityForPages(
+    pages.map((p) => p.page.id),
+    user.id,
+    "dashboard_visit",
+  );
+  // The rows above were read before that write, so reflect the hold we just
+  // lifted rather than rendering a stale "holding" badge for one refresh.
+  for (const { page } of pages) {
+    if (page.status === "inactivity_hold") page.status = "active";
   }
 
   // Pending counts per page.

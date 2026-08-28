@@ -9,11 +9,13 @@ export function AdminReportActions({
   pageId,
   pageStatus,
   reporterEmail,
+  status,
 }: {
   reportId: string;
   pageId: string;
   pageStatus: string;
   reporterEmail: string;
+  status: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -71,6 +73,22 @@ export function AdminReportActions({
           }}
         >
           Transfer ownership…
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy || status === "awaiting_reporter"}
+          onClick={() => {
+            const question = window.prompt(
+              "What do you need from the reporter?",
+              "Could you tell us more about how you know this, and anything we can check?",
+            );
+            // Asking is what starts the 30-day clock — an unanswered follow-up
+            // is the only thing that auto-closes a report.
+            if (question) act("request_info", { message: question });
+          }}
+        >
+          Ask the reporter…
         </Button>
         <Button
           size="sm"

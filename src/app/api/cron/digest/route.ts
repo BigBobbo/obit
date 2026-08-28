@@ -51,9 +51,16 @@ export async function GET(request: Request) {
       .select("id", { count: "exact", head: true })
       .eq("page_id", page.id)
       .eq("status", "pending");
+    // Reports the family still owe a decision on — they escalate if ignored,
+    // so they belong in the one email a free-tier steward reliably gets.
+    const { count: openReports } = await admin
+      .from("reports")
+      .select("id", { count: "exact", head: true })
+      .eq("page_id", page.id)
+      .eq("status", "steward");
 
     // No news, no email — keep digests meaningful.
-    if ((newApproved ?? 0) === 0 && (pendingCount ?? 0) === 0) continue;
+    if ((newApproved ?? 0) === 0 && (pendingCount ?? 0) === 0 && (openReports ?? 0) === 0) continue;
 
     const { data: stewards } = await admin
       .from("stewards")
@@ -68,6 +75,7 @@ export async function GET(request: Request) {
         newApproved ?? 0,
         pendingCount ?? 0,
         randomUUID(),
+        openReports ?? 0,
       );
       sent++;
     }

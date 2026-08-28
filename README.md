@@ -23,6 +23,8 @@ Stripe · Resend · `qrcode` · Cloudflare Turnstile · Tailwind.
 | QR codes (PNG/SVG free, plaque PDFs paid) | `src/app/api/qr/[pageId]/route.ts`, `src/lib/pdf.ts` |
 | Steward dashboard (queue, settings, co-stewards) | `src/app/dashboard/` |
 | Reporting & escalation, admin panel | `src/app/api/reports/`, `src/app/admin/` |
+| Report lifecycle (steward → admin → reporter follow-up) | `src/lib/reports.ts` |
+| Co-steward request flow | `src/app/m/[slug]/join/`, `src/app/api/steward-requests/` |
 | 90-day inactivity fail-safe, soft-delete purge | `src/app/api/cron/inactivity/route.ts` |
 | Weekly digests | `src/app/api/cron/digest/route.ts` |
 | EXIF stripping + image resizing | `src/lib/images.ts` |
@@ -51,7 +53,15 @@ degrades gracefully in development (e.g. missing Turnstile keys skip the bot
 check, missing Resend logs emails to the console), **but all keys are required
 in production**.
 
-One exception: `CONTRIBUTOR_COOKIE_SECRET` has no safe default. It signs the
+Two of them are enforced rather than assumed. `TURNSTILE_SECRET_KEY` and the
+`SIGHTENGINE_*` pair fail **closed** when `NODE_ENV=production`: an unset
+Turnstile key rejects every submission, page creation and report, and unset
+Sightengine credentials reject every photo upload. Skipping a safety check is a
+silent failure that nothing alerts on, so production refuses the request
+instead. **Set both before deploying, or the live site will turn contributors
+away.**
+
+`CONTRIBUTOR_COOKIE_SECRET` likewise has no safe default. It signs the
 cookie that lets a returning contributor skip email verification, so the app
 refuses to sign or read that cookie in production without it. Generate one with
 `openssl rand -base64 32`.
@@ -120,6 +130,10 @@ The suite covers the decisions that have to be right when nobody is watching:
 | Moderation config merge — a partial dashboard edit must not disable moderation | `tests/moderation-config.test.ts` |
 | Returning-contributor cookie signing, tampering, expiry | `tests/contributor-cookie.test.ts` |
 | Freemium fences, and that none of them touch moderation | `tests/plan.test.ts` |
+| Report lifecycle — steward escalation, and what may auto-close | `tests/reports.test.ts` |
+| Which steward actions a memory accepts in each state | `tests/memories.test.ts` |
+| Co-steward request approval state machine | `tests/steward-requests.test.ts` |
+| Safety integrations failing closed in production | `tests/fail-closed.test.ts` |
 
 `tests/helpers/supabase-stub.ts` is a small in-memory stand-in for the
 supabase-js query builder, so the pipeline tests run without Postgres. Anything
@@ -168,6 +182,27 @@ defaults key by key, so anything you leave out keeps its default rather than
 becoming undefined. A row that fails validation is rejected wholesale with an
 error in the logs and the defaults stay in force — the pipeline never runs with
 a half-populated threshold set.
+
+## Report lifecycle
+
+A report is never allowed to disappear quietly (PRD §4.6):
+
+1. **Memory reports go to the stewards.** The family is emailed, sees the
+   reported memory in full on their dashboard, and can keep it, remove it,
+   remove-and-block the contributor, or hand it to the platform admin. Removing
+   a memory works whether or not it is already published.
+2. **Page-level reports, and anything CSAM/illegal, go straight to the admin.**
+3. **Steward non-response escalates.** A memory report untouched for
+   `STEWARD_RESPONSE_DAYS` (7) moves to the admin queue on the daily cron —
+   ignoring a report surfaces it rather than burying it.
+4. **Auto-close needs an unanswered question.** The admin's "Ask the
+   reporter…" action emails a follow-up carrying a per-report capability token
+   and parks the report in `awaiting_reporter`. Only *that* state auto-closes,
+   30 days later, and never for CSAM/illegal. A report nobody has asked about
+   stays in the queue until a human closes it.
+
+`src/lib/reports.ts` holds those rules as pure functions; `tests/reports.test.ts`
+covers the boundaries.
 
 ## Private beta
 

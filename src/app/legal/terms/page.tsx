@@ -1,3 +1,5 @@
+import { dmcaEmail, supportEmail } from "@/lib/contact";
+
 export const metadata = { title: "Terms of Service — Memorial Pages" };
 
 export default function TermsPage() {
@@ -29,7 +31,7 @@ export default function TermsPage() {
         <p>
           Copyright complaints can be submitted via the &quot;Report&quot; link
           on any page (category: Copyright) or by email to our designated agent
-          at dmca@example.com. Include the information required by 17 U.S.C. §512(c)(3).
+          at {dmcaEmail()}. Include the information required by 17 U.S.C. §512(c)(3).
         </p>
         <h2 className="font-serif text-lg text-foreground">Deletion</h2>
         <p>
@@ -43,7 +45,7 @@ export default function TermsPage() {
           Paid subscriptions are billed through Stripe and can be cancelled any
           time via the customer portal. Safety features are never paywalled.
         </p>
-        <p>Questions: support@example.com.</p>
+        <p>Questions: {supportEmail()}.</p>
       </div>
     </main>
   );

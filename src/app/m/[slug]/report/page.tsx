@@ -12,10 +12,10 @@ export default async function ReportPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ memory?: string }>;
+  searchParams: Promise<{ memory?: string; category?: string }>;
 }) {
   const { slug } = await params;
-  const { memory } = await searchParams;
+  const { memory, category } = await searchParams;
 
   const supabase = await createClient();
   const page = await findPageByRef<{ random_id: string; name: string }>(
@@ -35,7 +35,7 @@ export default async function ReportPage({
         the page itself go to the Memorial Pages team.
       </p>
       <div className="mt-8">
-        <ReportForm pageRandomId={page.random_id} memoryId={memory} />
+        <ReportForm pageRandomId={page.random_id} memoryId={memory} initialCategory={category} />
       </div>
     </main>
   );

@@ -1,8 +1,20 @@
-/** Server-side verification of a Cloudflare Turnstile token. */
+/**
+ * Server-side verification of a Cloudflare Turnstile token.
+ *
+ * Unconfigured means *no bot defense at all* on page creation, submissions and
+ * reports. In development that is a convenience; in production it is a silent
+ * hole that nothing would ever alert on, so there it fails closed instead.
+ */
 export async function verifyTurnstile(token: string | null, ip?: string): Promise<boolean> {
   const secret = process.env.TURNSTILE_SECRET_KEY;
   if (!secret) {
-    // Not configured (local dev) — allow, but make it visible in logs.
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "TURNSTILE_SECRET_KEY is not set — refusing the request. Bot defense cannot be skipped in production.",
+      );
+      return false;
+    }
+    // Local dev — allow, but make it visible in logs.
     console.warn("TURNSTILE_SECRET_KEY not set; skipping bot check");
     return true;
   }

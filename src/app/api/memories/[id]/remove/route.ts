@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { deleteMemoryPhotos } from "@/lib/images";
+import { removeMemory } from "@/lib/moderation/removal";
 import { logEvent } from "@/lib/audit";
 
 /**
@@ -34,8 +34,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 
   // Already removed — report success so a double-submit is not an error.
   if (memory.status !== "rejected") {
-    await supabase.from("memories").update({ status: "rejected" }).eq("id", id);
-    await deleteMemoryPhotos(id);
+    await removeMemory(id);
     await logEvent({
       actorEmail: memory.contributor_email,
       action: "memory_removed_by_contributor",

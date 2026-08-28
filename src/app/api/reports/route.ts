@@ -5,6 +5,8 @@ import { rateLimit, clientIp, RATE_LIMITS } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { normalizeEmail } from "@/lib/utils";
 import { findPageByRef } from "@/lib/pages";
+import { initialReportRouting } from "@/lib/reports";
+import { sendMemoryReportNotice } from "@/lib/email";
 
 const CATEGORIES = [
   "fake_memorial",
@@ -68,10 +70,10 @@ export async function POST(request: Request) {
   }
 
   const supabase = createAdminClient();
-  const page = await findPageByRef<{ id: string }>(
+  const page = await findPageByRef<{ id: string; name: string }>(
     supabase,
     input.pageRandomId,
-    "id",
+    "id, name",
   );
   if (!page) return NextResponse.json({ error: "Page not found." }, { status: 404 });
 
@@ -85,11 +87,11 @@ export async function POST(request: Request) {
     if (!memory) return NextResponse.json({ error: "Memory not found." }, { status: 404 });
   }
 
-  const isMemoryReport = Boolean(input.memoryId);
-  const isCsam = input.category === "csam_or_illegal";
   // Memory reports go to stewards first; page-level and CSAM go to the admin
-  // escalation queue (PRD §4.6, §5).
-  const status = isCsam ? "escalated" : isMemoryReport ? "steward" : "escalated";
+  // escalation queue (PRD §4.6, §5). A memory report the stewards ignore for a
+  // week escalates from the cron job.
+  const isMemoryReport = Boolean(input.memoryId);
+  const { status, neverAutoclose } = initialReportRouting(input.category, isMemoryReport);
 
   await supabase.from("reports").insert({
     target_type: isMemoryReport ? "memory" : "page",
@@ -100,8 +102,23 @@ export async function POST(request: Request) {
     reporter_relationship: input.relationship || null,
     evidence_text: input.evidence || null,
     status,
-    never_autoclose: isCsam,
+    never_autoclose: neverAutoclose,
   });
+
+  // The stewards are the first responders for memory reports, so tell them.
+  if (status === "steward") {
+    const { data: stewards } = await supabase
+      .from("stewards")
+      .select("profiles!inner(email)")
+      .eq("page_id", page.id);
+    for (const s of stewards ?? []) {
+      await sendMemoryReportNotice((s.profiles as unknown as { email: string }).email, {
+        pageName: page.name,
+        pageId: page.id,
+        category: input.category,
+      });
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }
