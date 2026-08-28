@@ -18,7 +18,7 @@ begin
   insert into public.contributors as c (email, approved_count)
   values (p_email, 1)
   on conflict (email) do update set approved_count = c.approved_count + 1
-  returning c.approved_count into v_count;
+  returning approved_count into v_count;
   return v_count;
 end;
 $$;
