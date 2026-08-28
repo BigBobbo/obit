@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Turnstile } from "@/components/turnstile";
+import { seedTextarea } from "@/lib/prompts";
 
 const MAX_PHOTOS = 10;
 const MAX_TEXT = 2000;
@@ -17,10 +18,13 @@ export function ShareForm({
   pageId,
   randomId,
   pageName,
+  prompts = [],
 }: {
   pageId: string;
   randomId: string;
   pageName: string;
+  /** Guided prompts (PRD v2 §2.3) — the fix for "I don't know what to write". */
+  prompts?: string[];
 }) {
   const [step, setStep] = useState<Step>("compose");
   const [name, setName] = useState("");
@@ -94,11 +98,16 @@ export function ShareForm({
     return (
       <div className="rounded-lg border border-border bg-card p-6">
         <h2 className="font-serif text-xl">Thank you</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-base">
           {published
             ? `Your memory is now visible on the page for ${pageName}.`
-            : `Your memory has been received. The family reviews contributions before they appear.`}
-          {skippedVerification ? "" : " We've also emailed you a confirmation."}
+            : `Your memory has been sent to the family.`}
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {published
+            ? ""
+            : `${pageName}'s family reads contributions before they appear, and you'll hear either way. `}
+          {skippedVerification ? "" : "We've emailed you a copy."}
         </p>
         <Button asChild className="mt-4">
           <Link href={`/m/${randomId}`}>Back to the page</Link>
@@ -146,6 +155,26 @@ export function ShareForm({
         <Label htmlFor="email">Your email (never shown publicly)</Label>
         <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
       </div>
+      {prompts.length > 0 && (
+        <div className="rounded-md border border-border bg-card p-4">
+          <p className="text-sm font-medium">Not sure where to start?</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {prompts.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => setBody((b) => seedTextarea(b, prompt))}
+                className="rounded-full border border-border px-3 py-1.5 text-sm hover:bg-muted"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Tap one and it goes in the box — answer it however you like.
+          </p>
+        </div>
+      )}
       <div className="space-y-2">
         <Label htmlFor="body">Your memory</Label>
         <Textarea
@@ -179,10 +208,13 @@ export function ShareForm({
       >
         {busy ? "Submitting…" : "Continue"}
       </Button>
-      <p className="text-xs text-muted-foreground">
-        To protect the family&apos;s privacy, memories can&apos;t contain links,
-        phone numbers or addresses. Submissions are checked automatically and
-        may be reviewed by the family before appearing.
+      {/* A visible norm raises participation rather than suppressing it
+          (Matias 2019) — and it is simply true, so it belongs on the form. */}
+      <p className="text-sm text-muted-foreground">
+        <strong>Memories are shared with {pageName}&apos;s family before they
+        appear.</strong>{" "}
+        To protect their privacy, memories can&apos;t contain links, phone
+        numbers or addresses.
       </p>
     </form>
   );

@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { removeMemory } from "@/lib/moderation/removal";
 import { touchStewardActivity } from "@/lib/audit";
+import { REPORTED_DECLINE_REASON } from "@/lib/decline-templates";
+import { sendMemoryDeclined } from "@/lib/email";
 
 const schema = z.object({
   action: z.enum(["dismiss", "remove_memory", "remove_and_block", "escalate"]),
@@ -84,6 +86,24 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
           ? { pageId: report.page_id, email: memory.contributor_email }
           : undefined,
     });
+
+    // A takedown is a decline too, and no decline is silent (PRD v2 §2.3).
+    await admin
+      .from("memories")
+      .update({ decided_at: now, decline_reason: REPORTED_DECLINE_REASON })
+      .eq("id", report.memory_id);
+    if (memory) {
+      const { data: page } = await admin
+        .from("pages")
+        .select("name, random_id")
+        .eq("id", report.page_id)
+        .single();
+      await sendMemoryDeclined(memory.contributor_email as string, {
+        pageName: (page?.name as string) ?? "the memorial page",
+        reason: REPORTED_DECLINE_REASON,
+        randomId: (page?.random_id as string) ?? null,
+      });
+    }
   }
 
   await admin

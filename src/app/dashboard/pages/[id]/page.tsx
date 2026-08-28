@@ -11,10 +11,18 @@ import { AccessRequestsPanel, type AccessRequestCard } from "@/components/access
 import { EventsPanel, type StewardEvent } from "@/components/events-panel";
 import { ShareSheet } from "@/components/share-sheet";
 import { nextServiceLine, type EventRecord } from "@/lib/events";
+import {
+  formatLatency,
+  LATENCY_TARGET_HOURS,
+  medianHours,
+  toLatencySamples,
+  type DecisionRow,
+} from "@/lib/latency";
 import { QrPanel } from "@/components/qr-panel";
 import { StewardsPanel } from "@/components/stewards-panel";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
+import { effectivePlan } from "@/lib/plan";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -68,6 +76,16 @@ export default async function ManagePage({
     .eq("page_id", id)
     .eq("status", "pending")
     .order("created_at", { ascending: true });
+
+  // Approval latency (PRD v2 §2.3): the last hundred decisions this page made.
+  const { data: decisions } = await admin
+    .from("memories")
+    .select("created_at, decided_at, moderation_scores")
+    .eq("page_id", id)
+    .not("decided_at", "is", null)
+    .order("decided_at", { ascending: false })
+    .limit(100);
+  const latency = medianHours(toLatencySamples((decisions ?? []) as DecisionRow[]));
 
   const { data: stewards } = await admin
     .from("stewards")
@@ -192,6 +210,14 @@ export default async function ManagePage({
 
       <section className="mt-10">
         <h2 className="font-serif text-xl">Waiting for your review ({pending?.length ?? 0})</h2>
+        {latency !== null && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            You usually reply in <strong>{formatLatency(latency)}</strong>.{" "}
+            {latency <= LATENCY_TARGET_HOURS
+              ? "People who hear back quickly are the ones who write again."
+              : "A memory that sits unanswered is usually the last one that person writes."}
+          </p>
+        )}
         <div className="mt-4">
           <ModerationQueue
             memories={(pending ?? []).map((m) => ({
@@ -317,7 +343,7 @@ export default async function ManagePage({
       <section className="mt-10">
         <h2 className="font-serif text-xl">QR code</h2>
         <div className="mt-4">
-          <QrPanel pageId={page.id} randomId={page.random_id} paid={profile?.plan === "paid"} />
+          <QrPanel pageId={page.id} randomId={page.random_id} paid={effectivePlan(profile?.plan) === "paid"} />
         </div>
       </section>
 
@@ -351,7 +377,7 @@ export default async function ManagePage({
               reviewEverything: page.review_everything,
               autoPublishOptout: page.auto_publish_optout,
             }}
-            paid={profile?.plan === "paid"}
+            paid={effectivePlan(profile?.plan) === "paid"}
           />
         </div>
       </section>

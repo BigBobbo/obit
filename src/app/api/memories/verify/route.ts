@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runModerationPipeline } from "@/lib/moderation/pipeline";
-import { sendMemoryReceipt } from "@/lib/email";
+import { notifyContributorOfOutcome } from "@/lib/moderation/contributor-notice";
 import {
   createContributorCookieValue,
   contributorCookieName,
@@ -68,16 +68,17 @@ export async function POST(request: Request) {
 
   const { data: page } = await supabase
     .from("pages")
-    .select("name")
+    .select("name, random_id")
     .eq("id", memory.page_id)
     .single();
-  await sendMemoryReceipt(
-    memory.contributor_email,
-    page?.name ?? "the memorial page",
-    memory.id,
-    memory.removal_token,
-    outcome === "approved",
-  );
+  await notifyContributorOfOutcome({
+    email: memory.contributor_email,
+    pageName: page?.name ?? "the memorial page",
+    randomId: page?.random_id ?? null,
+    memoryId: memory.id,
+    removalToken: memory.removal_token,
+    outcome,
+  });
 
   const response = NextResponse.json({ status: outcome });
   response.cookies.set(contributorCookieName(), createContributorCookieValue(memory.contributor_email), {

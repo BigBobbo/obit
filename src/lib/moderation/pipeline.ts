@@ -2,6 +2,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getModerationConfig } from "@/lib/moderation/config";
 import { scoreText, type ModerationScores } from "@/lib/moderation/llm";
 import { sendPendingNotification } from "@/lib/email";
+import { AUTO_DECLINE_REASON } from "@/lib/decline-templates";
+import { limitsFor } from "@/lib/plan";
 
 /**
  * Tier 1 + Tier 2 (PRD §5). Called after email verification and after Tier 0
@@ -87,6 +89,10 @@ export async function runModerationPipeline(memoryId: string): Promise<PipelineO
         routing: { outcome, reasons, decided_at: now },
       },
       ...(outcome === "approved" ? { approved_at: now } : {}),
+      // The approval-latency clock stops on a decision, not on a queueing:
+      // a memory routed to the steward queue is still waiting for a human.
+      ...(outcome === "pending" ? {} : { decided_at: now }),
+      ...(outcome === "auto_rejected" ? { decline_reason: AUTO_DECLINE_REASON } : {}),
     })
     .eq("id", memoryId);
 
@@ -111,7 +117,10 @@ export async function incrementApprovedCount(email: string) {
   if (error) console.error("failed to increment approved_count", error);
 }
 
-/** Paid stewards get instant pending-queue notifications (PRD §8). */
+/**
+ * Instant pending-queue notifications are a paid convenience (PRD §8) — and,
+ * while ALL_FEATURES_FREE is set, everybody's (PRD v2 §2.4).
+ */
 async function notifyStewardsIfInstant(pageId: string, pageName: string) {
   const supabase = createAdminClient();
   const { data: stewards } = await supabase
@@ -120,7 +129,7 @@ async function notifyStewardsIfInstant(pageId: string, pageName: string) {
     .eq("page_id", pageId);
   for (const s of stewards ?? []) {
     const profile = s.profiles as unknown as { email: string; plan: string };
-    if (profile.plan === "paid") {
+    if (limitsFor(profile.plan).instantQueueNotifications) {
       await sendPendingNotification(profile.email, pageName, pageId);
     }
   }
