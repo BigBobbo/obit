@@ -29,11 +29,27 @@ export default async function AdminPage() {
   const { data: reports } = await admin
     .from("reports")
     .select(
-      "id, target_type, category, reporter_email, reporter_relationship, evidence_text, status, created_at, never_autoclose, pages!inner(id, random_id, name, status)",
+      "id, target_type, memory_id, category, reporter_email, reporter_relationship, evidence_text, status, resolution, created_at, never_autoclose, pages!inner(id, random_id, name, status)",
     )
-    .in("status", ["escalated", "open"])
+    // awaiting_reporter is shown too: a report parked on a follow-up must stay
+    // visible, or "asked a question" becomes indistinguishable from "forgotten".
+    .in("status", ["escalated", "open", "awaiting_reporter"])
     .order("created_at", { ascending: true })
     .limit(100);
+
+  // Memory reports reach this queue when the stewards don't act on them, and
+  // they cannot be judged without the memory itself — a rejected or pending
+  // one is not visible anywhere on the public page.
+  const memoryIds = (reports ?? [])
+    .map((r) => r.memory_id)
+    .filter((id): id is string => Boolean(id));
+  const { data: reportedMemories } = memoryIds.length
+    ? await admin
+        .from("memories")
+        .select("id, contributor_name, contributor_email, body, status")
+        .in("id", memoryIds)
+    : { data: [] };
+  const memoriesById = new Map((reportedMemories ?? []).map((m) => [m.id as string, m]));
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -61,6 +77,9 @@ export default async function AdminPage() {
                   {r.category.replace(/_/g, " ")}
                 </Badge>
                 <Badge variant="muted">{r.target_type}</Badge>
+                {r.status === "awaiting_reporter" && (
+                  <Badge variant="warning">waiting on reporter</Badge>
+                )}
                 <span className="text-sm text-muted-foreground">
                   {new Date(r.created_at).toLocaleString()}
                 </span>
@@ -74,14 +93,45 @@ export default async function AdminPage() {
                 {r.reporter_relationship && ` (${r.reporter_relationship})`}
               </p>
               {r.evidence_text && (
-                <p className="mt-2 rounded bg-muted p-3 text-sm">{r.evidence_text}</p>
+                <p className="mt-2 whitespace-pre-wrap rounded bg-muted p-3 text-sm">
+                  {r.evidence_text}
+                </p>
               )}
+              {r.resolution && (
+                <p className="mt-2 text-sm italic text-muted-foreground">{r.resolution}</p>
+              )}
+              {r.memory_id &&
+                (() => {
+                  const memory = memoriesById.get(r.memory_id!);
+                  if (!memory) {
+                    return (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        The reported memory is no longer on the page.
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="mt-3 border-l-2 border-border pl-4">
+                      <p className="text-sm text-muted-foreground">
+                        {memory.contributor_name as string} ·{" "}
+                        {memory.contributor_email as string}{" "}
+                        <Badge variant="muted">{memory.status as string}</Badge>
+                      </p>
+                      {(memory.body as string) && (
+                        <p className="mt-2 whitespace-pre-wrap font-serif text-sm">
+                          {memory.body as string}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               <div className="mt-4">
                 <AdminReportActions
                   reportId={r.id}
                   pageId={page.id}
                   pageStatus={page.status}
                   reporterEmail={r.reporter_email}
+                  status={r.status}
                 />
               </div>
             </article>

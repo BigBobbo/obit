@@ -23,18 +23,47 @@ export async function logEvent(opts: {
  * inactivity hold if one is in place.
  */
 export async function touchStewardActivity(pageId: string, userId: string, action: string) {
+  await recordStewardActivity([pageId], userId, action, pageId);
+}
+
+/**
+ * The same, for every page a steward has just shown up for at once.
+ *
+ * The fail-safe releases on *signing in*, not only on opening one page
+ * (PRD §2): a steward who signs in, sees their dashboard and leaves must not
+ * leave their pages holding contributions. The dashboard used to bump the
+ * clock but leave the status alone, so the hold outlived the activity that was
+ * supposed to clear it.
+ */
+export async function touchStewardActivityForPages(
+  pageIds: string[],
+  userId: string,
+  action: string,
+) {
+  await recordStewardActivity(pageIds, userId, action, null);
+}
+
+async function recordStewardActivity(
+  pageIds: string[],
+  userId: string,
+  action: string,
+  logPageId: string | null,
+) {
+  if (pageIds.length === 0) return;
   const supabase = createAdminClient();
+
   await supabase
     .from("pages")
     .update({ last_steward_activity_at: new Date().toISOString() })
-    .eq("id", pageId);
-  const { data: page } = await supabase
+    .in("id", pageIds);
+
+  // Scoped to held pages so an active or frozen page is never touched — a
+  // frozen page must stay frozen no matter who signs in.
+  await supabase
     .from("pages")
-    .select("status")
-    .eq("id", pageId)
-    .single();
-  if (page?.status === "inactivity_hold") {
-    await supabase.from("pages").update({ status: "active" }).eq("id", pageId);
-  }
-  await logEvent({ actorUserId: userId, pageId, action });
+    .update({ status: "active" })
+    .in("id", pageIds)
+    .eq("status", "inactivity_hold");
+
+  await logEvent({ actorUserId: userId, pageId: logPageId, action });
 }

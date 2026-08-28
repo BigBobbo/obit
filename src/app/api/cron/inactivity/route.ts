@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendInactivityHoldNotice } from "@/lib/email";
 import { deletePagePhotos } from "@/lib/images";
 import { logEvent } from "@/lib/audit";
+import { daysAgo, STEWARD_RESPONSE_DAYS, REPORT_AUTOCLOSE_DAYS } from "@/lib/reports";
 
 // Vercel's Hobby tier caps function duration well below the 300s this used to
 // declare. The job is batched instead: each run handles at most BATCH_LIMIT
@@ -18,7 +19,10 @@ const BATCH_LIMIT = 100;
  *     auto-publish to hold-all-for-review (unless opted out). Pages are never
  *     auto-deleted; viewing is unaffected.
  *  2. Purge soft-deleted pages older than 30 days.
- *  3. Auto-close stale reports (except never_autoclose categories).
+ *  3. Escalate memory reports the stewards have left untouched — non-response
+ *     is an escalation to the platform admin (PRD §4.6), not a quiet expiry.
+ *  4. Auto-close reports whose reporter never answered our follow-up
+ *     (never CSAM/illegal, which stay open until resolved by hand).
  *
  * Every run writes an audit record. A silent partial run is the dangerous
  * failure here: if phase 1 stops early and nobody notices, pages quietly stop
@@ -28,8 +32,10 @@ export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const admin = createAdminClient();
-  const ninetyDaysAgo = new Date(Date.now() - 90 * 86400_000).toISOString();
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const ninetyDaysAgo = daysAgo(90, now);
+  const thirtyDaysAgo = daysAgo(30, now);
 
   // --- 1. Inactivity hold ---
   const { data: stale } = await admin
@@ -70,13 +76,30 @@ export async function GET(request: Request) {
     await logEvent({ pageId: page.id, action: "page_purged" });
   }
 
-  // --- 3. Auto-close stale reports (30 days, never CSAM/illegal) ---
+  // --- 3. Steward non-response → platform admin (PRD §4.6) ---
+  // A memory report the family has not touched within the window is exactly
+  // the case the PRD escalates. Before this, such reports auto-closed instead:
+  // ignoring a report made it disappear rather than surface.
+  const { data: escalated } = await admin
+    .from("reports")
+    .update({ status: "escalated", escalated_at: nowIso })
+    .eq("status", "steward")
+    .lt("created_at", daysAgo(STEWARD_RESPONSE_DAYS, now))
+    .select("id");
+
+  // --- 4. Auto-close reports whose reporter never replied to our follow-up ---
+  // Conditional on an *unanswered follow-up*, not on age alone: a report
+  // nobody has asked about must stay in the queue until a human closes it.
   const { data: closed } = await admin
     .from("reports")
-    .update({ status: "auto_closed", resolved_at: new Date().toISOString() })
-    .in("status", ["open", "steward"])
+    .update({
+      status: "auto_closed",
+      resolved_at: nowIso,
+      resolution: `Closed automatically — no reply to our follow-up within ${REPORT_AUTOCLOSE_DAYS} days.`,
+    })
+    .eq("status", "awaiting_reporter")
     .eq("never_autoclose", false)
-    .lt("created_at", thirtyDaysAgo)
+    .lt("follow_up_sent_at", thirtyDaysAgo)
     .select("id");
 
   const held = stale?.length ?? 0;
@@ -88,6 +111,7 @@ export async function GET(request: Request) {
   const summary = {
     held,
     purged,
+    reportsEscalated: escalated?.length ?? 0,
     reportsClosed: closed?.length ?? 0,
     moreWaiting,
   };

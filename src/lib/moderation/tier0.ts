@@ -84,6 +84,18 @@ export async function tier0Image(jpeg: Buffer): Promise<Tier0Result> {
   const user = process.env.SIGHTENGINE_API_USER;
   const secret = process.env.SIGHTENGINE_API_SECRET;
   if (!user || !secret) {
+    // Same reasoning as Turnstile: an unconfigured moderation API in
+    // production means every photo publishes unchecked, which is precisely the
+    // failure this tier exists to prevent. It already fails closed when the
+    // API errors; missing credentials are not a weaker case.
+    if (process.env.NODE_ENV === "production") {
+      console.error("SIGHTENGINE credentials are not set — rejecting the upload rather than skipping Tier 0.");
+      return {
+        ok: false,
+        reason: "image_moderation_unconfigured",
+        userMessage: "We can't accept photos right now. Please try again later.",
+      };
+    }
     console.warn("Sightengine not configured; image passes Tier 0 unchecked");
     return { ok: true };
   }

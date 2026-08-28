@@ -7,7 +7,8 @@ declare
   expected text[] := array[
     'audit_log', 'bans', 'contributor_page_blocks', 'contributors',
     'memories', 'moderation_config', 'pages', 'photos',
-    'processed_stripe_events', 'profiles', 'rate_limits', 'reports', 'stewards'
+    'processed_stripe_events', 'profiles', 'rate_limits', 'reports',
+    'steward_requests', 'stewards'
   ];
   missing text[];
 begin
@@ -44,7 +45,7 @@ do $$
 declare
   expected text[] := array[
     'is_steward', 'is_admin', 'handle_new_user',
-    'bump_rate_limit', 'bump_approved_count'
+    'bump_rate_limit', 'bump_approved_count', 'unbump_approved_count'
   ];
   missing text[];
 begin
@@ -88,6 +89,28 @@ begin
 end
 $$;
 
+-- Reversing an approval must be atomic too, and must never go negative: a
+-- negative count would read as "trusted contributor" nowhere but would corrupt
+-- every later comparison.
+do $$
+declare
+  after_down integer;
+  floored integer;
+begin
+  delete from public.contributors where email = 'schema-check@example.com';
+  perform public.bump_approved_count('schema-check@example.com');
+  perform public.bump_approved_count('schema-check@example.com');
+  after_down := public.unbump_approved_count('schema-check@example.com');
+  floored    := public.unbump_approved_count('schema-check@example.com');
+  floored    := public.unbump_approved_count('schema-check@example.com');
+  if after_down <> 1 or floored <> 0 then
+    raise exception 'unbump_approved_count returned % then floored at %, expected 1 then 0',
+      after_down, floored;
+  end if;
+  delete from public.contributors where email = 'schema-check@example.com';
+end
+$$;
+
 -- The rate limiter counts within a window.
 do $$
 declare
@@ -111,6 +134,77 @@ begin
   ) then
     raise exception 'pages.photo_count still exists — 0003 should have dropped it';
   end if;
+end
+$$;
+
+-- 0004's report lifecycle. Without these columns the cron job silently stops
+-- escalating steward non-response and stops closing unanswered follow-ups.
+do $$
+declare
+  expected text[] := array['escalated_at', 'follow_up_sent_at', 'response_token'];
+  missing text[];
+begin
+  select array_agg(c) into missing
+  from unnest(expected) c
+  where not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'reports' and column_name = c
+  );
+  if missing is not null then
+    raise exception 'reports is missing columns: %', missing;
+  end if;
+end
+$$;
+
+-- The report lifecycle and the steward-request state machine, exercised
+-- end to end on a fixture this block creates and removes itself — the reset +
+-- re-apply pass has no seed data, so depending on it would leave these
+-- assertions silently unrun half the time.
+do $$
+declare
+  fixture_user uuid := '99999999-9999-9999-9999-999999999999';
+  fixture_page uuid;
+  report_id uuid;
+  first_request uuid;
+begin
+  insert into auth.users (id, email) values (fixture_user, 'schema-check@example.com')
+  on conflict (id) do nothing;
+
+  insert into public.pages (random_id, name, date_of_birth, date_of_death, created_by)
+  values ('SchemaCheck1', 'Schema Check', '1940-01-01', '2020-01-01', fixture_user)
+  returning id into fixture_page;
+
+  -- The status a report waits in while the reporter owes us an answer. If the
+  -- CHECK constraint rejected it, request_info would fail and nothing would
+  -- ever auto-close.
+  insert into public.reports (target_type, page_id, category, reporter_email, status)
+  values ('page', fixture_page, 'spam', 'schema-check@example.com', 'awaiting_reporter')
+  returning id into report_id;
+
+  if (select response_token from public.reports where id = report_id) is null then
+    raise exception 'reports.response_token did not default to a token';
+  end if;
+
+  -- Only one steward request may be open per person per page.
+  insert into public.steward_requests (page_id, requester_email, requester_name, relationship)
+  values (fixture_page, 'schema-check@example.com', 'Schema Check', 'cousin')
+  returning id into first_request;
+
+  begin
+    insert into public.steward_requests (page_id, requester_email, requester_name, relationship)
+    values (fixture_page, 'schema-check@example.com', 'Schema Check', 'cousin');
+    raise exception 'a second open steward request was allowed for the same email';
+  exception when unique_violation then
+    null; -- expected
+  end;
+
+  -- Deciding the first one frees the slot again.
+  update public.steward_requests set status = 'declined' where id = first_request;
+  insert into public.steward_requests (page_id, requester_email, requester_name, relationship)
+  values (fixture_page, 'schema-check@example.com', 'Schema Check', 'cousin');
+
+  delete from public.pages where id = fixture_page;
+  delete from auth.users where id = fixture_user;
 end
 $$;
 

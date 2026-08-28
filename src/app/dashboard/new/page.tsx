@@ -70,8 +70,14 @@ export default function NewPagePage() {
               <p className="font-medium">{d.name}</p>
               <div className="mt-2 flex gap-3 text-sm">
                 <Link className="underline" href={`/m/${d.randomId}`}>View page</Link>
-                <Link className="underline" href={`/m/${d.randomId}/report?category=ownership`}>
-                  Request co-steward access / dispute ownership
+                <Link className="underline" href={`/m/${d.randomId}/join`}>
+                  Ask to help look after it
+                </Link>
+                <Link
+                  className="underline"
+                  href={`/m/${d.randomId}/report?category=impersonation_or_ownership`}
+                >
+                  Dispute ownership
                 </Link>
               </div>
             </li>

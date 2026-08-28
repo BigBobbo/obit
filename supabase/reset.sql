@@ -13,7 +13,9 @@ drop function if exists public.is_steward(uuid) cascade;
 drop function if exists public.is_admin() cascade;
 drop function if exists public.bump_rate_limit(text, integer) cascade;
 drop function if exists public.bump_approved_count(text) cascade;
+drop function if exists public.unbump_approved_count(text) cascade;
 
+drop table if exists public.steward_requests cascade;
 drop table if exists public.processed_stripe_events cascade;
 drop table if exists public.moderation_config cascade;
 drop table if exists public.rate_limits cascade;

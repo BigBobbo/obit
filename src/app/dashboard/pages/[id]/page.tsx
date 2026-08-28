@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { touchStewardActivity } from "@/lib/audit";
 import { ModerationQueue } from "@/components/moderation-queue";
+import { MemoryReports, type ReportedMemory } from "@/components/memory-reports";
+import { StewardRequestsPanel } from "@/components/steward-requests-panel";
 import { PageSettings } from "@/components/page-settings";
 import { QrPanel } from "@/components/qr-panel";
 import { StewardsPanel } from "@/components/stewards-panel";
@@ -75,6 +77,48 @@ export default async function ManagePage({
     .eq("status", "steward")
     .order("created_at", { ascending: true });
 
+  // The reported memories themselves — a steward can't judge a report against
+  // content they can't see, and most reports are about published memories.
+  const reportedMemoryIds = (memoryReports ?? [])
+    .map((r) => r.memory_id)
+    .filter((mid): mid is string => Boolean(mid));
+  const { data: reportedMemories } = reportedMemoryIds.length
+    ? await admin
+        .from("memories")
+        .select("id, contributor_name, contributor_email, body, status, photos(id, sizes)")
+        .in("id", reportedMemoryIds)
+    : { data: [] };
+  const memoriesById = new Map(
+    (reportedMemories ?? []).map((m) => [
+      m.id as string,
+      {
+        id: m.id as string,
+        contributorName: m.contributor_name as string,
+        contributorEmail: m.contributor_email as string,
+        body: m.body as string,
+        status: m.status as string,
+        photos: (m.photos ?? []).map((ph) => ({
+          id: ph.id as string,
+          sizes: ph.sizes as Record<string, { path: string }>,
+        })),
+      },
+    ]),
+  );
+  const reportCards: ReportedMemory[] = (memoryReports ?? []).map((r) => ({
+    reportId: r.id,
+    category: r.category,
+    evidence: r.evidence_text,
+    createdAt: r.created_at,
+    memory: (r.memory_id && memoriesById.get(r.memory_id)) || null,
+  }));
+
+  const { data: stewardRequests } = await admin
+    .from("steward_requests")
+    .select("id, requester_name, requester_email, relationship, message, status, created_at")
+    .eq("page_id", id)
+    .in("status", ["pending", "awaiting_signup"])
+    .order("created_at", { ascending: true });
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       <Link href="/dashboard" className="text-sm text-muted-foreground underline">
@@ -118,17 +162,38 @@ export default async function ManagePage({
         </div>
       </section>
 
-      {(memoryReports?.length ?? 0) > 0 && (
+      {reportCards.length > 0 && (
         <section className="mt-10">
-          <h2 className="font-serif text-xl">Reports on memories ({memoryReports!.length})</h2>
-          <ul className="mt-4 space-y-2 text-sm">
-            {memoryReports!.map((r) => (
-              <li key={r.id} className="rounded-md border border-border bg-card p-4">
-                <Badge variant="warning">{r.category.replace(/_/g, " ")}</Badge>
-                {r.evidence_text && <p className="mt-2">{r.evidence_text}</p>}
-              </li>
-            ))}
-          </ul>
+          <h2 className="font-serif text-xl">Reports on memories ({reportCards.length})</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Reports come to you first. Anything you&apos;d rather not judge, send
+            to the Memorial Pages team — and anything left unanswered for a week
+            goes to them automatically.
+          </p>
+          <div className="mt-4">
+            <MemoryReports reports={reportCards} />
+          </div>
+        </section>
+      )}
+
+      {(stewardRequests?.length ?? 0) > 0 && (
+        <section className="mt-10">
+          <h2 className="font-serif text-xl">
+            Requests to help ({stewardRequests!.length})
+          </h2>
+          <div className="mt-4">
+            <StewardRequestsPanel
+              requests={stewardRequests!.map((r) => ({
+                id: r.id,
+                name: r.requester_name,
+                email: r.requester_email,
+                relationship: r.relationship,
+                message: r.message,
+                status: r.status,
+                createdAt: r.created_at,
+              }))}
+            />
+          </div>
         </section>
       )}
 

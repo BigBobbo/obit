@@ -20,11 +20,17 @@ const CATEGORIES = [
 export function ReportForm({
   pageRandomId,
   memoryId,
+  initialCategory,
 }: {
   pageRandomId: string;
   memoryId?: string;
+  initialCategory?: string;
 }) {
-  const [category, setCategory] = useState("");
+  // Links can preselect a reason (the dedupe screen points ownership disputes
+  // straight here). Anything unrecognised falls back to "choose a reason".
+  const [category, setCategory] = useState(
+    CATEGORIES.some((c) => c.value === initialCategory) ? initialCategory! : "",
+  );
   const [email, setEmail] = useState("");
   const [relationship, setRelationship] = useState("");
   const [evidence, setEvidence] = useState("");

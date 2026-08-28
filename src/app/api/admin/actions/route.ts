@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/audit";
 import { normalizeEmail } from "@/lib/utils";
+import { sendReportFollowUp } from "@/lib/email";
 
 const schema = z.object({
   action: z.enum([
@@ -12,6 +13,7 @@ const schema = z.object({
     "ban_email",
     "ban_ip",
     "transfer_ownership",
+    "request_info",
     "resolve_report",
   ]),
   reportId: z.string().uuid().optional(),
@@ -19,6 +21,8 @@ const schema = z.object({
   email: z.string().email().optional(),
   ip: z.string().optional(),
   resolution: z.string().max(2000).optional(),
+  // The follow-up question put to the reporter (request_info).
+  message: z.string().max(2000).optional(),
 });
 
 /** Admin actions (PRD §4.6): freeze, ban, ownership transfer, resolution. */
@@ -98,6 +102,33 @@ export async function POST(request: Request) {
           .from("stewards")
           .insert({ page_id: input.pageId, user_id: newOwner.id, role: "owner" });
       }
+      break;
+    }
+    case "request_info": {
+      // Asking the reporter a question is what starts the 30-day auto-close
+      // clock (PRD §4.6) — reports nobody has asked about never age out.
+      if (!input.reportId) {
+        return NextResponse.json({ error: "reportId required" }, { status: 400 });
+      }
+      const { data: report } = await admin
+        .from("reports")
+        .select("id, reporter_email, response_token, never_autoclose, pages!inner(name)")
+        .eq("id", input.reportId)
+        .maybeSingle();
+      if (!report) return NextResponse.json({ error: "Report not found" }, { status: 404 });
+
+      await admin
+        .from("reports")
+        .update({ status: "awaiting_reporter", follow_up_sent_at: new Date().toISOString() })
+        .eq("id", input.reportId);
+
+      await sendReportFollowUp(report.reporter_email, {
+        reportId: report.id,
+        responseToken: report.response_token,
+        pageName: (report.pages as unknown as { name: string }).name,
+        question: input.message ?? "",
+        neverAutoclose: report.never_autoclose,
+      });
       break;
     }
     case "resolve_report":

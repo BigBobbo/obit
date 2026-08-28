@@ -1,3 +1,5 @@
+import { supportEmail } from "@/lib/contact";
+
 export const metadata = { title: "Privacy Policy — Memorial Pages" };
 
 export default function PrivacyPage() {
@@ -41,7 +43,7 @@ export default function PrivacyPage() {
         <p>
           Stewards can delete pages (30-day recovery window, then purged).
           Contributors can remove their memory via the link in their
-          confirmation email, or email support@example.com.
+          confirmation email, or email {supportEmail()}.
         </p>
       </div>
     </main>
