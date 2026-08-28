@@ -34,4 +34,14 @@ run "$ROOT/supabase/seed.sql"
 echo "Checking the schema came out whole..."
 psql "$PGURL" -v ON_ERROR_STOP=1 -q -f "$ROOT/supabase/tests/schema-assertions.sql"
 
-echo "OK — migrations apply cleanly."
+# The reset script has to survive a real Supabase, where storage tables are
+# guarded against direct DELETE and CREATE POLICY is not idempotent. Applying
+# reset and then the migrations again exercises both.
+echo "Checking reset + re-apply..."
+run "$ROOT/supabase/reset.sql"
+for f in "$ROOT"/supabase/migrations/*.sql; do
+  run "$f"
+done
+psql "$PGURL" -v ON_ERROR_STOP=1 -q -f "$ROOT/supabase/tests/schema-assertions.sql"
+
+echo "OK — migrations apply cleanly, and reset + re-apply works."

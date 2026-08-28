@@ -67,3 +67,24 @@ create table if not exists storage.objects (
 );
 
 alter table storage.objects enable row level security;
+
+-- Supabase guards its storage tables with a trigger that refuses direct
+-- DELETEs, pointing you at the Storage API instead. Reproduced here so a
+-- migration or reset script that tries one fails in CI rather than in
+-- somebody's dashboard.
+create or replace function storage.protect_delete()
+returns trigger language plpgsql as $$
+begin
+  raise exception 'Direct deletion from storage tables is not allowed. Use the Storage API instead.'
+    using errcode = '42501',
+          hint = 'This prevents accidental data loss from orphaned objects.';
+end;
+$$;
+
+create trigger protect_buckets_delete
+  before delete on storage.buckets
+  for each statement execute function storage.protect_delete();
+
+create trigger protect_objects_delete
+  before delete on storage.objects
+  for each statement execute function storage.protect_delete();
