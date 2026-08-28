@@ -72,6 +72,7 @@ export async function sendWeeklyDigest(
   pendingCount: number,
   digestToken: string,
   openReports = 0,
+  giving: { totalCents: number; waitingMessages: number } = { totalCents: 0, waitingMessages: 0 },
 ) {
   // The dashboard link carries a token; opening it counts as steward activity
   // for the 90-day clock (PRD §4.5).
@@ -87,6 +88,16 @@ export async function sendWeeklyDigest(
         ${
           openReports > 0
             ? `<li><strong>${openReports} ${openReports === 1 ? "report" : "reports"} waiting for your decision</strong></li>`
+            : ""
+        }
+        ${
+          giving.totalCents > 0
+            ? `<li>${formatUsd(giving.totalCents)} given in ${escapeHtml(pageName)}'s memory so far</li>`
+            : ""
+        }
+        ${
+          giving.waitingMessages > 0
+            ? `<li><strong>${giving.waitingMessages} donor ${giving.waitingMessages === 1 ? "message" : "messages"} waiting for your decision</strong></li>`
             : ""
         }
       </ul>
@@ -230,6 +241,14 @@ export async function sendMemoryDeclined(
       }
     `),
   );
+}
+
+function formatUsd(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(Math.round(cents / 100));
 }
 
 function escapeHtml(s: string): string {

@@ -59,8 +59,34 @@ export async function GET(request: Request) {
       .eq("page_id", page.id)
       .eq("status", "steward");
 
+    // Giving, when the family has named a charity (PRD v2 §3.2). Two numbers:
+    // what has been given, and what is waiting on the family's decision.
+    const { data: charityIds } = await admin
+      .from("page_charities")
+      .select("id")
+      .eq("page_id", page.id);
+    let giving = { totalCents: 0, waitingMessages: 0 };
+    if (charityIds && charityIds.length > 0) {
+      const ids = charityIds.map((c) => c.id as string);
+      const { data: donations } = await admin
+        .from("donations")
+        .select("amount_cents, status")
+        .in("page_charity_id", ids);
+      giving = {
+        totalCents: (donations ?? []).reduce((sum, d) => sum + ((d.amount_cents as number) ?? 0), 0),
+        waitingMessages: (donations ?? []).filter((d) => d.status === "pending").length,
+      };
+    }
+
     // No news, no email — keep digests meaningful.
-    if ((newApproved ?? 0) === 0 && (pendingCount ?? 0) === 0 && (openReports ?? 0) === 0) continue;
+    if (
+      (newApproved ?? 0) === 0 &&
+      (pendingCount ?? 0) === 0 &&
+      (openReports ?? 0) === 0 &&
+      giving.waitingMessages === 0
+    ) {
+      continue;
+    }
 
     const { data: stewards } = await admin
       .from("stewards")
@@ -76,6 +102,7 @@ export async function GET(request: Request) {
         pendingCount ?? 0,
         randomUUID(),
         openReports ?? 0,
+        giving,
       );
       sent++;
     }

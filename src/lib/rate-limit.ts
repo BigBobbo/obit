@@ -49,6 +49,8 @@ export const RATE_LIMITS = {
   accessCodePerPagePerHour: { max: 60, window: 3600 },
   accessRequestPerIpPerDay: { max: 10, window: DAY },
   accessRequestPerPagePerDay: { max: 50, window: DAY },
+  // Charity search proxies a partner API key, so it is metered per steward.
+  charitySearchPerUserPerHour: { max: 60, window: 3600 },
   // RSVPs: a head count, not a guest book — generous, but not a spam vector.
   rsvpPerIpPerDay: { max: 10, window: DAY },
   rsvpPerEventPerDay: { max: 200, window: DAY },

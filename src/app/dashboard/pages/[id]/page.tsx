@@ -10,6 +10,9 @@ import { PrivacySettings } from "@/components/privacy-settings";
 import { AccessRequestsPanel, type AccessRequestCard } from "@/components/access-requests-panel";
 import { EventsPanel, type StewardEvent } from "@/components/events-panel";
 import { ShareSheet } from "@/components/share-sheet";
+import { GivingPanel } from "@/components/giving-panel";
+import { loadGivingAdmin } from "@/lib/giving/queries";
+import { givingEnabled, givingPartner } from "@/lib/giving/partner";
 import { nextServiceLine, type EventRecord } from "@/lib/events";
 import {
   formatLatency,
@@ -181,6 +184,8 @@ export default async function ManagePage({
     };
   });
 
+  const giving = givingEnabled() ? await loadGivingAdmin(id) : null;
+
   const { data: stewardRequests } = await admin
     .from("steward_requests")
     .select("id, requester_name, requester_email, relationship, message, status, created_at")
@@ -304,6 +309,25 @@ export default async function ManagePage({
                   verifiedAt: r.verified_at,
                 }),
               )}
+            />
+          </div>
+        </section>
+      )}
+
+      {giving && (
+        <section className="mt-10">
+          <h2 className="font-serif text-xl">In lieu of flowers</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Name up to three registered charities. People give directly to them
+            through {givingPartner()?.displayName ?? "our partner"} — the money
+            never passes through us and we take none of it.
+          </p>
+          <div className="mt-4 rounded-lg border border-border bg-card p-6">
+            <GivingPanel
+              pageId={page.id}
+              partnerName={givingPartner()?.displayName ?? "our partner"}
+              charities={giving.charities}
+              donations={giving.donations}
             />
           </div>
         </section>

@@ -12,6 +12,9 @@ import { nextServiceLine, type EventRecord } from "@/lib/events";
 import { AccessGate } from "@/components/access-gate";
 import { EventBlock } from "@/components/event-block";
 import { ShareSheet } from "@/components/share-sheet";
+import { GivingBlock } from "@/components/giving-block";
+import { loadGivingBlock } from "@/lib/giving/queries";
+import { givingPartner } from "@/lib/giving/partner";
 import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
@@ -136,6 +139,7 @@ async function FullMemorial({ page, steward }: { page: PageRecord; steward: bool
     admin.from("pages").select("bio").eq("id", page.id).single(),
   ]);
   const bio = (inside?.bio as string | undefined) ?? "";
+  const giving = await loadGivingBlock(page.id);
 
   const gated = isGated(page);
   const url = `${appUrl()}/m/${page.random_id}`;
@@ -212,6 +216,14 @@ async function FullMemorial({ page, steward }: { page: PageRecord; steward: bool
         ))}
       </section>
 
+      {giving && (
+        <GivingBlock
+          giving={giving}
+          personName={page.name}
+          partnerName={givingPartner()?.displayName ?? "our charity partner"}
+        />
+      )}
+
       <section className="mt-14 rounded-lg border border-border bg-card p-6">
         <h2 className="font-serif text-xl">Share this page</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -259,6 +271,9 @@ async function GatedMemorial({
         .eq("on_announcement", true)
     : { data: [] };
 
+  // In-lieu-of-flowers belongs on the announcement: it is the surface the
+  // funeral-week link actually reaches (PRD v2 §3.2).
+  const giving = announcement ? await loadGivingBlock(page.id) : null;
   const url = `${appUrl()}/m/${page.random_id}`;
 
   return (
@@ -293,6 +308,14 @@ async function GatedMemorial({
       )}
 
       {announcement && <EventBlock events={(events ?? []) as EventRecord[]} />}
+
+      {giving && (
+        <GivingBlock
+          giving={giving}
+          personName={page.name}
+          partnerName={givingPartner()?.displayName ?? "our charity partner"}
+        />
+      )}
 
       {accessNotice === "requested" && (
         <p className="mt-8 rounded-md border border-border bg-card p-4 text-center text-base">

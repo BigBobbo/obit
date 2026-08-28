@@ -6,8 +6,8 @@ do $$
 declare
   expected text[] := array[
     'access_requests', 'audit_log', 'bans', 'contributor_page_blocks',
-    'contributors', 'event_rsvps', 'events',
-    'memories', 'moderation_config', 'pages', 'photos',
+    'contributors', 'donations', 'event_rsvps', 'events',
+    'memories', 'moderation_config', 'page_charities', 'pages', 'photos',
     'processed_stripe_events', 'profiles', 'rate_limits', 'reports',
     'steward_requests', 'stewards'
   ];
@@ -46,7 +46,8 @@ do $$
 declare
   expected text[] := array[
     'is_steward', 'is_admin', 'handle_new_user',
-    'bump_rate_limit', 'bump_approved_count', 'unbump_approved_count'
+    'bump_rate_limit', 'bump_approved_count', 'unbump_approved_count',
+    'page_giving_total'
   ];
   missing text[];
 begin
@@ -457,6 +458,65 @@ begin
   if missing is not null then
     raise exception 'memories is missing columns: %', missing;
   end if;
+end
+$$;
+
+-- 0006's giving tables. Two properties carry the whole compliance story: what
+-- an individual gave is never readable with the anon key, and the total is the
+-- total regardless of what the family did with a donor's message.
+do $$
+declare
+  fixture_user uuid := '66666666-6666-6666-6666-666666666666';
+  fixture_page uuid;
+  fixture_charity uuid;
+  visible integer;
+  total bigint;
+begin
+  insert into auth.users (id, email) values (fixture_user, 'giving-check@example.com')
+  on conflict (id) do nothing;
+
+  insert into public.pages (random_id, name, date_of_birth, date_of_death, created_by)
+  values ('GivingCheck', 'Giving Check', '1940-01-01', '2020-01-01', fixture_user)
+  returning id into fixture_page;
+
+  insert into public.page_charities (page_id, ein, name, partner_slug)
+  values (fixture_page, '13-1644147', 'A Verified Charity', 'a-verified-charity')
+  returning id into fixture_charity;
+
+  -- One published, one the family hid. Both are money that was given.
+  insert into public.donations (page_charity_id, amount_cents, donor_name, partner_ref, status)
+  values (fixture_charity, 2500, 'A neighbour', 'partner-ref-1', 'published');
+  insert into public.donations (page_charity_id, amount_cents, donor_name, partner_ref, status)
+  values (fixture_charity, 1000, 'Someone rude', 'partner-ref-2', 'hidden');
+
+  total := public.page_giving_total(fixture_page);
+  if total <> 3500 then
+    raise exception 'page_giving_total returned %, expected 3500 — moderation must not hide money', total;
+  end if;
+
+  -- The partner retries; a replay must not double the family's total.
+  begin
+    insert into public.donations (page_charity_id, amount_cents, partner_ref)
+    values (fixture_charity, 2500, 'partner-ref-1');
+    raise exception 'a replayed webhook was allowed to insert a second donation';
+  exception when unique_violation then
+    null; -- expected
+  end;
+
+  -- Per-donor rows must be unreachable with the anon key entirely.
+  set local role anon;
+  begin
+    select count(*) into visible from public.donations;
+  exception when insufficient_privilege then
+    visible := 0;
+  end;
+  reset role;
+  if visible <> 0 then
+    raise exception 'the anon key returned % donation rows — per-donor amounts must never be readable', visible;
+  end if;
+
+  delete from public.pages where id = fixture_page;
+  delete from auth.users where id = fixture_user;
 end
 $$;
 
