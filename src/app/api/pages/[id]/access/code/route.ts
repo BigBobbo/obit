@@ -18,9 +18,18 @@ const schema = z.object({ code: z.string().min(1).max(100) });
  * Code entry (PRD v2 §1.1). One field, no account, no password rules — the
  * whole interaction is "type what's printed on the order of service".
  *
- * Wrong codes are rate-limited per IP and per page. That is what keeps a soft
- * gate a gate: a human reading a code off a card gets in first try, a scraper
- * working through a wordlist gets ten attempts an hour.
+ * The metering below is deliberately two-part, because the obvious version gets
+ * this wrong. A funeral is exactly the situation where dozens of people arrive
+ * through one carrier NAT within an hour: if correct entries counted against
+ * the same quota as guesses, the gate would lock out the mourners rather than
+ * the scraper.
+ *
+ *   - every request costs one *attempt*, which bounds the scrypt work a
+ *     stranger can make us do;
+ *   - only a *wrong* code costs a guess, and guesses are what run out.
+ *
+ * A human reading a code off a card gets in first try; a wordlist gets twenty
+ * tries an hour from one address, and a hundred against one page.
  */
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -29,18 +38,13 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
 
   const ip = clientIp(request);
-  const allowed =
-    (await rateLimit(
-      `access:code:ip:${ip}`,
-      RATE_LIMITS.accessCodePerIpPerHour.max,
-      RATE_LIMITS.accessCodePerIpPerHour.window,
-    )) &&
-    (await rateLimit(
-      `access:code:page:${id}`,
-      RATE_LIMITS.accessCodePerPagePerHour.max,
-      RATE_LIMITS.accessCodePerPagePerHour.window,
-    ));
-  if (!allowed) {
+  const rl = RATE_LIMITS;
+  const tooBusy = !(await rateLimit(
+    `access:code:attempt:${ip}`,
+    rl.accessCodeAttemptsPerIpPerHour.max,
+    rl.accessCodeAttemptsPerIpPerHour.window,
+  ));
+  if (tooBusy) {
     return NextResponse.json(
       { error: "Too many attempts. Please wait a little and try again." },
       { status: 429 },
@@ -62,9 +66,25 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   }
 
   if (!verifyAccessCode(parsed.data.code, page.access_code_hash)) {
+    // Only now is a guess spent.
+    const withinBudget =
+      (await rateLimit(
+        `access:code:wrong:ip:${ip}`,
+        rl.wrongAccessCodePerIpPerHour.max,
+        rl.wrongAccessCodePerIpPerHour.window,
+      )) &&
+      (await rateLimit(
+        `access:code:wrong:page:${id}`,
+        rl.wrongAccessCodePerPagePerHour.max,
+        rl.wrongAccessCodePerPagePerHour.window,
+      ));
     return NextResponse.json(
-      { error: "That code didn't work. Check the spelling and try again." },
-      { status: 403 },
+      {
+        error: withinBudget
+          ? "That code didn't work. Check the spelling and try again."
+          : "Too many attempts. Please wait a little and try again.",
+      },
+      { status: withinBudget ? 403 : 429 },
     );
   }
 

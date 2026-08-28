@@ -144,9 +144,10 @@ function renderCard(card: {
       width: WIDTH,
       height: HEIGHT,
       headers: {
-        // Announcement content only, so a shared cache is safe — and scrapers
-        // re-fetch these constantly during the week that matters.
-        "Cache-Control": "public, max-age=600, s-maxage=600",
+        // Announcement content only, so a shared cache is safe. The URL in the
+        // page metadata carries a version, so a long TTL never serves a stale
+        // card for an edited page.
+        "Cache-Control": "public, max-age=3600, s-maxage=3600",
         "X-Robots-Tag": "noindex, nofollow, noarchive",
       },
     },

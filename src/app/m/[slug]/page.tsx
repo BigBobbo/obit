@@ -28,7 +28,7 @@ type Props = {
 // anon key is not granted it (migration 0005). It is read below, with the
 // service role, only once access has been settled.
 const PAGE_COLUMNS = `id, random_id, slug, name, date_of_birth, date_of_death,
-  cover_photo_path, status, announcement_text, ${ACCESS_COLUMNS}`;
+  cover_photo_path, status, announcement_text, last_steward_activity_at, ${ACCESS_COLUMNS}`;
 
 type PageRecord = AccessPage & {
   slug: string | null;
@@ -38,6 +38,7 @@ type PageRecord = AccessPage & {
   cover_photo_path: string | null;
   status: string;
   announcement_text: string;
+  last_steward_activity_at: string;
 };
 
 const EVENT_COLUMNS =
@@ -78,7 +79,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       title: `In memory of ${page.name}`,
       description: `${formatDate(page.date_of_birth)} — ${formatDate(page.date_of_death)}`,
-      images: [`${appUrl()}/api/og/${page.id}`],
+      // Versioned so the card is regenerated when the family edits the page
+      // (PRD v2 §2.2). Every scraper caches an OG image hard and by URL, so a
+      // TTL on our side would not reach the ones that already have it: the URL
+      // has to change. `last_steward_activity_at` moves on every steward
+      // action, which over-invalidates slightly and under-invalidates never.
+      images: [`${appUrl()}/api/og/${page.id}?v=${Date.parse(page.last_steward_activity_at) || 0}`],
     },
   };
 }

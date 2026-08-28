@@ -29,7 +29,7 @@ function emptyForm(): FormState {
     kind: "service",
     title: "",
     startsAtLocal: "",
-    tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York",
+    tz: "",
     venue: "",
     locality: "",
     mapUrl: "",
@@ -38,6 +38,20 @@ function emptyForm(): FormState {
     onAnnouncement: true,
     rsvpEnabled: false,
   };
+}
+
+/**
+ * Filled in when the form opens, never at mount: this component is rendered on
+ * the server too, where the "browser" timezone is the server's. A default that
+ * differs between the two renders is a hydration mismatch waiting for the first
+ * steward who opens the page from a different country than the deploy region.
+ */
+function browserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
+  } catch {
+    return "America/New_York";
+  }
 }
 
 /**
@@ -157,7 +171,7 @@ export function EventsPanel({ pageId, events }: { pageId: string; events: Stewar
         <Button
           variant="outline"
           onClick={() => {
-            setForm(emptyForm());
+            setForm({ ...emptyForm(), tz: browserTimezone() });
             setEditingId(null);
             setOpen(true);
           }}
