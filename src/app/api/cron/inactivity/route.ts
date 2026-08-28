@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendInactivityHoldNotice } from "@/lib/email";
+import { deletePagePhotos } from "@/lib/images";
 import { logEvent } from "@/lib/audit";
 
-export const maxDuration = 300;
+// Vercel's Hobby tier caps function duration well below the 300s this used to
+// declare. The job is batched instead: each run handles at most BATCH_LIMIT
+// pages per phase and reports whether more remain, so a run that hits the cap
+// degrades into "finish next time" rather than being killed mid-purge.
+export const maxDuration = 60;
+
+const BATCH_LIMIT = 100;
 
 /**
  * Daily job (PRD §2, §11):
@@ -12,6 +19,10 @@ export const maxDuration = 300;
  *     auto-deleted; viewing is unaffected.
  *  2. Purge soft-deleted pages older than 30 days.
  *  3. Auto-close stale reports (except never_autoclose categories).
+ *
+ * Every run writes an audit record. A silent partial run is the dangerous
+ * failure here: if phase 1 stops early and nobody notices, pages quietly stop
+ * being protected by the fail-safe.
  */
 export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -26,7 +37,9 @@ export async function GET(request: Request) {
     .select("id, name")
     .eq("status", "active")
     .eq("auto_publish_optout", false)
-    .lt("last_steward_activity_at", ninetyDaysAgo);
+    .lt("last_steward_activity_at", ninetyDaysAgo)
+    .order("last_steward_activity_at", { ascending: true })
+    .limit(BATCH_LIMIT);
 
   for (const page of stale ?? []) {
     await admin.from("pages").update({ status: "inactivity_hold" }).eq("id", page.id);
@@ -46,20 +59,13 @@ export async function GET(request: Request) {
     .from("pages")
     .select("id")
     .eq("status", "soft_deleted")
-    .lt("deleted_at", thirtyDaysAgo);
+    .lt("deleted_at", thirtyDaysAgo)
+    .order("deleted_at", { ascending: true })
+    .limit(BATCH_LIMIT);
 
   for (const page of purgeable ?? []) {
-    // Remove stored photos first (both buckets), then the row (cascades).
-    const { data: photos } = await admin
-      .from("photos")
-      .select("original_path, sizes")
-      .eq("page_id", page.id);
-    const originals = (photos ?? []).map((p) => p.original_path).filter(Boolean);
-    const renditions = (photos ?? []).flatMap((p) =>
-      Object.values((p.sizes ?? {}) as Record<string, { path: string }>).map((s) => s.path),
-    );
-    if (originals.length) await admin.storage.from("originals").remove(originals);
-    if (renditions.length) await admin.storage.from("photos").remove(renditions);
+    // Remove stored photos from both buckets first, then the row (cascades).
+    await deletePagePhotos(page.id);
     await admin.from("pages").delete().eq("id", page.id);
     await logEvent({ pageId: page.id, action: "page_purged" });
   }
@@ -73,11 +79,21 @@ export async function GET(request: Request) {
     .lt("created_at", thirtyDaysAgo)
     .select("id");
 
-  return NextResponse.json({
-    held: stale?.length ?? 0,
-    purged: purgeable?.length ?? 0,
+  const held = stale?.length ?? 0;
+  const purged = purgeable?.length ?? 0;
+  // A full batch means there is very likely more waiting; surface it rather
+  // than letting the backlog grow invisibly.
+  const moreWaiting = held >= BATCH_LIMIT || purged >= BATCH_LIMIT;
+
+  const summary = {
+    held,
+    purged,
     reportsClosed: closed?.length ?? 0,
-  });
+    moreWaiting,
+  };
+  await logEvent({ action: "cron_inactivity_completed", meta: summary });
+
+  return NextResponse.json(summary);
 }
 
 function authorized(request: Request): boolean {

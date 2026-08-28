@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { findPageByRef } from "@/lib/pages";
 import { ShareForm } from "@/components/share-form";
 
 export const dynamic = "force-dynamic";
@@ -9,11 +10,12 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 export default async function SharePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const supabase = await createClient();
-  const { data: page } = await supabase
-    .from("pages")
-    .select("id, random_id, name, status")
-    .or(`random_id.eq.${slug},slug.eq.${slug}`)
-    .maybeSingle();
+  const page = await findPageByRef<{
+    id: string;
+    random_id: string;
+    name: string;
+    status: string;
+  }>(supabase, slug, "id, random_id, name, status");
   if (!page) notFound();
 
   return (

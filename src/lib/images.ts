@@ -71,3 +71,64 @@ export function publicPhotoUrl(path: string): string {
 export async function toModerationJpeg(buffer: Buffer): Promise<Buffer> {
   return sharp(buffer).rotate().resize({ width: 800, withoutEnlargement: true }).jpeg().toBuffer();
 }
+
+type StoredPhoto = {
+  original_path: string | null;
+  sizes: Record<string, { path: string }> | null;
+};
+
+/**
+ * Removes the objects behind a set of photo rows from both buckets.
+ *
+ * Deleting the bytes matters because web renditions live in a *public* bucket:
+ * flipping a memory's status to `rejected` hides the row from the feed but
+ * leaves every rendition fetchable by URL indefinitely. Originals are private,
+ * but there is no reason to keep them once a memory is gone.
+ */
+async function removeObjects(photos: StoredPhoto[]): Promise<void> {
+  const supabase = createAdminClient();
+  const originals = photos
+    .map((p) => p.original_path)
+    .filter((p): p is string => Boolean(p));
+  const renditions = photos.flatMap((p) =>
+    Object.values(p.sizes ?? {})
+      .map((s) => s?.path)
+      .filter((p): p is string => Boolean(p)),
+  );
+
+  if (originals.length) {
+    const { error } = await supabase.storage.from("originals").remove(originals);
+    if (error) console.error("failed to remove originals", error);
+  }
+  if (renditions.length) {
+    const { error } = await supabase.storage.from("photos").remove(renditions);
+    if (error) console.error("failed to remove renditions", error);
+  }
+}
+
+/** Deletes every photo attached to a memory. Leaves the page's cover alone. */
+export async function deleteMemoryPhotos(memoryId: string): Promise<number> {
+  const supabase = createAdminClient();
+  const { data: photos } = await supabase
+    .from("photos")
+    .select("original_path, sizes")
+    .eq("memory_id", memoryId);
+  if (!photos?.length) return 0;
+
+  await removeObjects(photos as StoredPhoto[]);
+  await supabase.from("photos").delete().eq("memory_id", memoryId);
+  return photos.length;
+}
+
+/** Deletes every photo on a page, cover included. Used by the purge job. */
+export async function deletePagePhotos(pageId: string): Promise<number> {
+  const supabase = createAdminClient();
+  const { data: photos } = await supabase
+    .from("photos")
+    .select("original_path, sizes")
+    .eq("page_id", pageId);
+  if (!photos?.length) return 0;
+
+  await removeObjects(photos as StoredPhoto[]);
+  return photos.length;
+}

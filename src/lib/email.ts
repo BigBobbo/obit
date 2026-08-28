@@ -44,7 +44,9 @@ export async function sendMemoryReceipt(
   removalToken: string,
   autoPublished: boolean,
 ) {
-  const removeUrl = `${APP_URL()}/api/memories/${memoryId}/remove?token=${removalToken}`;
+  // Points at the confirmation page, not the API route: the removal itself is
+  // a POST so that a mail scanner following this link cannot delete a memory.
+  const removeUrl = `${APP_URL()}/memories/${memoryId}/remove?token=${removalToken}`;
   await send(
     to,
     `Your memory for ${pageName}`,

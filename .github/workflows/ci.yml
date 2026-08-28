@@ -20,8 +20,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
       - name: Type-check
         run: npm run typecheck
+
+      # The moderation decision table is the product: Tier 0's hard blocks, the
+      # Tier 2 routing matrix, and the page-reference validation that keeps
+      # memorial pages unenumerable. These run without a database.
+      - name: Test
+        run: npm test
 
       # Build with placeholder public env vars. The app reads real secrets at
       # runtime and degrades gracefully when integrations are unconfigured, so

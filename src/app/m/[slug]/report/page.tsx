@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { findPageByRef } from "@/lib/pages";
 import { ReportForm } from "@/components/report-form";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +18,11 @@ export default async function ReportPage({
   const { memory } = await searchParams;
 
   const supabase = await createClient();
-  const { data: page } = await supabase
-    .from("pages")
-    .select("random_id, name")
-    .or(`random_id.eq.${slug},slug.eq.${slug}`)
-    .maybeSingle();
+  const page = await findPageByRef<{ random_id: string; name: string }>(
+    supabase,
+    slug,
+    "random_id, name",
+  );
   if (!page) notFound();
 
   return (

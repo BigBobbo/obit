@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimit, clientIp, RATE_LIMITS } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { normalizeEmail } from "@/lib/utils";
+import { findPageByRef } from "@/lib/pages";
 
 const CATEGORIES = [
   "fake_memorial",
@@ -67,11 +68,11 @@ export async function POST(request: Request) {
   }
 
   const supabase = createAdminClient();
-  const { data: page } = await supabase
-    .from("pages")
-    .select("id")
-    .or(`random_id.eq.${input.pageRandomId},slug.eq.${input.pageRandomId}`)
-    .maybeSingle();
+  const page = await findPageByRef<{ id: string }>(
+    supabase,
+    input.pageRandomId,
+    "id",
+  );
   if (!page) return NextResponse.json({ error: "Page not found." }, { status: 404 });
 
   if (input.memoryId) {

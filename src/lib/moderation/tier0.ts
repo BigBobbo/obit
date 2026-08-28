@@ -29,11 +29,14 @@ export async function tier0Text(
   email: string,
   ip: string,
 ): Promise<Tier0Result> {
-  if (URL_RE.test(body)) {
-    return { ok: false, reason: "link", userMessage: PII_MESSAGE };
-  }
+  // Email before URL: an address always contains a domain, so the bare-domain
+  // branch of URL_RE would otherwise match first and record the wrong reason.
+  // Same block either way, but the audit log should say what was found.
   if (EMAIL_RE.test(body)) {
     return { ok: false, reason: "email_in_text", userMessage: PII_MESSAGE };
+  }
+  if (URL_RE.test(body)) {
+    return { ok: false, reason: "link", userMessage: PII_MESSAGE };
   }
   if (PHONE_RE.test(body)) {
     return { ok: false, reason: "phone", userMessage: PII_MESSAGE };
@@ -45,13 +48,14 @@ export async function tier0Text(
   const supabase = createAdminClient();
 
   // Blocklisted contributor email or IP → generic message (don't confirm the ban).
-  const { data: ban } = await supabase
-    .from("bans")
-    .select("id")
-    .or(`email.eq.${email},ip.eq.${ip}`)
-    .limit(1)
-    .maybeSingle();
-  if (ban) {
+  // Two exact-match lookups rather than an interpolated or(): the IP comes from
+  // an X-Forwarded-For header, and PostgREST filter strings are not
+  // parameterised, so interpolating one can inject extra predicates.
+  const [{ data: emailBan }, { data: ipBan }] = await Promise.all([
+    supabase.from("bans").select("id").eq("email", email).limit(1).maybeSingle(),
+    supabase.from("bans").select("id").eq("ip", ip).limit(1).maybeSingle(),
+  ]);
+  if (emailBan || ipBan) {
     return {
       ok: false,
       reason: "banned",

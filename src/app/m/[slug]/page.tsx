@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { publicPhotoUrl } from "@/lib/images";
+import { findPageByRef } from "@/lib/pages";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -27,17 +28,24 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+const PAGE_COLUMNS =
+  "id, random_id, slug, name, date_of_birth, date_of_death, bio, cover_photo_path, status";
+
+type PageRecord = {
+  id: string;
+  random_id: string;
+  slug: string | null;
+  name: string;
+  date_of_birth: string;
+  date_of_death: string;
+  bio: string;
+  cover_photo_path: string | null;
+  status: string;
+};
+
 async function loadPage(slug: string) {
   const supabase = await createClient();
-  // The slug param may be the canonical random_id or a custom slug.
-  const { data } = await supabase
-    .from("pages")
-    .select(
-      "id, random_id, slug, name, date_of_birth, date_of_death, bio, cover_photo_path, status",
-    )
-    .or(`random_id.eq.${slug},slug.eq.${slug}`)
-    .maybeSingle();
-  return data;
+  return findPageByRef<PageRecord>(supabase, slug, PAGE_COLUMNS);
 }
 
 export default async function MemorialPage({ params }: Props) {
@@ -153,12 +161,11 @@ async function frozenOrNotFound(slug: string) {
   // Frozen pages are hidden from public RLS but show a neutral message
   // instead of a 404 (PRD §6). Uses the service role for the status check only.
   const { createAdminClient } = await import("@/lib/supabase/admin");
-  const supabase = createAdminClient();
-  const { data } = await supabase
-    .from("pages")
-    .select("status")
-    .or(`random_id.eq.${slug},slug.eq.${slug}`)
-    .maybeSingle();
+  const data = await findPageByRef<{ status: string }>(
+    createAdminClient(),
+    slug,
+    "status",
+  );
 
   if (data?.status === "frozen") {
     return (
