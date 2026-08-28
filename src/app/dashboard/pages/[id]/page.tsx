@@ -44,7 +44,7 @@ export default async function ManagePage({
   const { data: page } = await admin
     .from("pages")
     .select(
-      "id, random_id, slug, name, date_of_birth, date_of_death, bio, status, review_everything, auto_publish_optout, photo_count",
+      "id, random_id, slug, name, date_of_birth, date_of_death, bio, status, review_everything, auto_publish_optout",
     )
     .eq("id", id)
     .single();

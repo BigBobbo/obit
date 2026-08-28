@@ -101,16 +101,14 @@ export async function runModerationPipeline(memoryId: string): Promise<PipelineO
   return outcome;
 }
 
+/**
+ * Atomic — two approvals landing together must not lose one. The counter gates
+ * auto-publish, so an undercount keeps an established contributor queued.
+ */
 export async function incrementApprovedCount(email: string) {
   const supabase = createAdminClient();
-  const { data } = await supabase
-    .from("contributors")
-    .select("approved_count")
-    .eq("email", email)
-    .maybeSingle();
-  await supabase
-    .from("contributors")
-    .upsert({ email, approved_count: (data?.approved_count ?? 0) + 1 });
+  const { error } = await supabase.rpc("bump_approved_count", { p_email: email });
+  if (error) console.error("failed to increment approved_count", error);
 }
 
 /** Paid stewards get instant pending-queue notifications (PRD §8). */
