@@ -29,11 +29,14 @@ export async function tier0Text(
   email: string,
   ip: string,
 ): Promise<Tier0Result> {
-  if (URL_RE.test(body)) {
-    return { ok: false, reason: "link", userMessage: PII_MESSAGE };
-  }
+  // Email before URL: an address always contains a domain, so the bare-domain
+  // branch of URL_RE would otherwise match first and record the wrong reason.
+  // Same block either way, but the audit log should say what was found.
   if (EMAIL_RE.test(body)) {
     return { ok: false, reason: "email_in_text", userMessage: PII_MESSAGE };
+  }
+  if (URL_RE.test(body)) {
+    return { ok: false, reason: "link", userMessage: PII_MESSAGE };
   }
   if (PHONE_RE.test(body)) {
     return { ok: false, reason: "phone", userMessage: PII_MESSAGE };

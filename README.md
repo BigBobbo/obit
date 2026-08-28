@@ -37,6 +37,7 @@ Stripe · Resend · `qrcode` · Cloudflare Turnstile · Tailwind.
 2. Run the migrations in order in the SQL editor (or `supabase db push`):
    - `supabase/migrations/0001_init.sql`
    - `supabase/migrations/0002_storage.sql`
+   - `supabase/migrations/0003_hardening.sql`
 3. Auth → Providers: enable **Email** with magic links (disable passwords).
    Set the Site URL to your deployment URL and add
    `https://<your-domain>/auth/callback` to the redirect allowlist.
@@ -49,6 +50,11 @@ Copy `.env.example` to `.env.local` and fill in the keys. Every integration
 degrades gracefully in development (e.g. missing Turnstile keys skip the bot
 check, missing Resend logs emails to the console), **but all keys are required
 in production**.
+
+One exception: `CONTRIBUTOR_COOKIE_SECRET` has no safe default. It signs the
+cookie that lets a returning contributor skip email verification, so the app
+refuses to sign or read that cookie in production without it. Generate one with
+`openssl rand -base64 32`.
 
 ### 3. Run
 
@@ -74,19 +80,16 @@ empty. Sign in by requesting a magic link for that address and opening it in
 Inbucket at <http://localhost:54324>. Point `.env.local` at the local URLs and
 keys that `supabase start` prints.
 
-## Continuous integration
-
-`.github/workflows/ci.yml` runs `npm run typecheck` and `npm run build` on every
-push to `main` and every pull request, so the default branch stays green. The
-build runs with placeholder public env vars — since the app degrades gracefully
-when integrations are unconfigured, a keyless build still type-checks every
-route end to end.
-
 ### 4. Deploy (Vercel)
 
 1. Import the repo into Vercel; set all env vars from `.env.example`.
 2. `vercel.json` registers the two cron jobs (daily inactivity/purge, weekly
    digest). Set `CRON_SECRET` — Vercel sends it as the Authorization header.
+   Both jobs declare `maxDuration = 60` to stay inside the Hobby tier's cap and
+   work in batches of 100, so a run that hits the ceiling resumes next time
+   rather than being killed mid-purge. The digest accepts `?after=<page id>`
+   and returns `nextCursor` when more pages remain; both jobs write a
+   completion record to the audit log.
 3. Put the domain **behind Cloudflare (proxied/orange-cloud)** — required for
    CSAM scanning (below) and recommended for Turnstile.
 
@@ -98,6 +101,43 @@ route end to end.
    `checkout.session.completed`, `customer.subscription.updated`,
    `customer.subscription.deleted`; put its secret in `STRIPE_WEBHOOK_SECRET`.
 3. Enable the Customer Portal in the Stripe dashboard.
+
+## Tests
+
+```bash
+npm test          # vitest, no database required
+npm run test:watch
+npm run lint
+```
+
+The suite covers the decisions that have to be right when nobody is watching:
+
+| Area | File |
+|---|---|
+| Tier 2 routing matrix (publish / queue / reject, and the degraded paths) | `tests/pipeline.test.ts` |
+| Tier 0 hard blocks — PII patterns, bans, contributor blocks | `tests/tier0.test.ts` |
+| Page-reference validation that keeps pages unenumerable | `tests/find-page-by-ref.test.ts`, `tests/ids.test.ts` |
+| Moderation config merge — a partial dashboard edit must not disable moderation | `tests/moderation-config.test.ts` |
+| Returning-contributor cookie signing, tampering, expiry | `tests/contributor-cookie.test.ts` |
+| Freemium fences, and that none of them touch moderation | `tests/plan.test.ts` |
+
+`tests/helpers/supabase-stub.ts` is a small in-memory stand-in for the
+supabase-js query builder, so the pipeline tests run without Postgres. Anything
+that depends on RLS actually behaving still needs a database — see the local
+Supabase section above.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs `npm run lint`, `npm run typecheck`, `npm test`
+and `npm run build` on every push to `main` and every pull request, so the
+default branch stays green. The build runs with placeholder public env vars —
+since the app degrades gracefully when integrations are unconfigured, a keyless
+build still type-checks every route end to end.
+
+The lint config carries one project-specific rule: interpolating a value into a
+PostgREST `or()` filter is an error. Filter strings are not parameterised, and a
+URL-supplied page reference in one is what made memorial pages enumerable. Use
+`eq()` lookups, or `findPageByRef()` for pages.
 
 ## CSAM scanning (Tier 0.1) — operational runbook
 
@@ -122,6 +162,12 @@ not in app code:
 Thresholds and the Tier 1 prompt live in the `moderation_config` table
 (single JSON row). Edit it in the Supabase dashboard; changes take effect
 within 60 seconds (per-instance cache).
+
+Editing one threshold is safe: the row is validated and merged over the
+defaults key by key, so anything you leave out keeps its default rather than
+becoming undefined. A row that fails validation is rejected wholesale with an
+error in the logs and the defaults stay in force — the pipeline never runs with
+a half-populated threshold set.
 
 ## Private beta
 
