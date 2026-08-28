@@ -109,6 +109,17 @@ export function PrivacySettings({
         ))}
       </fieldset>
 
+      {mode !== "link" && initial.accessMode === "link" && (
+        <p className="rounded-md bg-muted p-3 text-xs text-muted-foreground">
+          <strong>One thing to know.</strong> From the moment you save, the
+          memories and the photos are only shown to people who get past the
+          gate. But while this page was open, a visitor could have saved a
+          direct link to a photo, and those saved links keep working. Nothing we
+          can change about that — we&apos;d rather say so than let you assume
+          otherwise.
+        </p>
+      )}
+
       {mode === "code" && (
         <div className="space-y-2 rounded-md border border-border p-4">
           <Label htmlFor="access-code-set">

@@ -21,7 +21,10 @@ type Props = {
   searchParams: Promise<{ access?: string }>;
 };
 
-const PAGE_COLUMNS = `id, random_id, slug, name, date_of_birth, date_of_death, bio,
+// No `bio` here on purpose: the life story is not announcement content, so the
+// anon key is not granted it (migration 0005). It is read below, with the
+// service role, only once access has been settled.
+const PAGE_COLUMNS = `id, random_id, slug, name, date_of_birth, date_of_death,
   cover_photo_path, status, announcement_text, ${ACCESS_COLUMNS}`;
 
 type PageRecord = AccessPage & {
@@ -29,7 +32,6 @@ type PageRecord = AccessPage & {
   name: string;
   date_of_birth: string;
   date_of_death: string;
-  bio: string;
   cover_photo_path: string | null;
   status: string;
   announcement_text: string;
@@ -118,8 +120,9 @@ async function FullMemorial({ page, steward }: { page: PageRecord; steward: bool
   // On a gated page the anon key returns nothing (RLS, migration 0005), so the
   // read runs with the service role *after* access has been settled above.
   const reader = isGated(page) ? createAdminClient() : await createClient();
+  const admin = createAdminClient();
 
-  const [{ data: memories }, { data: events }] = await Promise.all([
+  const [{ data: memories }, { data: events }, { data: inside }] = await Promise.all([
     reader
       .from("memories")
       .select("id, contributor_name, body, created_at, photos(id, sizes)")
@@ -128,7 +131,11 @@ async function FullMemorial({ page, steward }: { page: PageRecord; steward: bool
       .order("created_at", { ascending: false })
       .limit(200),
     reader.from("events").select(EVENT_COLUMNS).eq("page_id", page.id),
+    // The biography belongs to the people inside the gate, so it never travels
+    // with the link the way the announcement does.
+    admin.from("pages").select("bio").eq("id", page.id).single(),
   ]);
+  const bio = (inside?.bio as string | undefined) ?? "";
 
   const gated = isGated(page);
   const url = `${appUrl()}/m/${page.random_id}`;
@@ -150,9 +157,9 @@ async function FullMemorial({ page, steward }: { page: PageRecord; steward: bool
         </p>
       </header>
 
-      {page.bio && (
+      {bio && (
         <section className="mt-8 whitespace-pre-wrap font-serif text-lg leading-relaxed">
-          {page.bio}
+          {bio}
         </section>
       )}
 

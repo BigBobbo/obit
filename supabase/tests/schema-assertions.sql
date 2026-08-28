@@ -232,24 +232,26 @@ begin
 end
 $$;
 
--- The access code hash is the one column on `pages` the anon key may not read,
--- and every other column is one the app does read. Both halves are assertions:
--- a leaked hash is an offline brute-force target, and an ungranted column is a
--- page that renders blank.
+-- Two columns on `pages` the anon key may not read, and every other column one
+-- the app does read. Both halves are assertions: a leaked hash is an offline
+-- brute-force target, a leaked biography is the life story going out with the
+-- link, and an ungranted column is a page that renders blank.
 do $$
 declare
-  leaked text;
+  private_columns text[] := array['access_code_hash', 'bio'];
+  col text;
   ungranted text[];
 begin
-  if has_column_privilege('anon', 'public.pages', 'access_code_hash', 'SELECT') then
-    leaked := 'access_code_hash';
-    raise exception 'anon can read pages.% — revoke it', leaked;
-  end if;
+  foreach col in array private_columns loop
+    if has_column_privilege('anon', 'public.pages', col, 'SELECT') then
+      raise exception 'anon can read pages.% — it is served through an access-checked route, not the anon key', col;
+    end if;
+  end loop;
 
   select array_agg(column_name::text) into ungranted
   from information_schema.columns
   where table_schema = 'public' and table_name = 'pages'
-    and column_name <> 'access_code_hash'
+    and not (column_name = any (private_columns))
     and not has_column_privilege('anon', 'public.pages', column_name, 'SELECT');
 
   if ungranted is not null then
@@ -350,6 +352,89 @@ begin
   end;
 
   insert into public.event_rsvps (event_id, name, party_size) values (fixture_event, 'A friend', 3);
+
+  delete from public.pages where id = fixture_page;
+  delete from auth.users where id = fixture_user;
+end
+$$;
+
+-- Phase 1 acceptance criterion 3, at the layer that decides it: a request
+-- carrying nothing but the anon key must not retrieve memory text or a
+-- contributed photo from a gated page. Policy text is checked above; this
+-- runs the query.
+do $$
+declare
+  fixture_user uuid := '77777777-7777-7777-7777-777777777777';
+  fixture_page uuid;
+  fixture_memory uuid;
+  visible_memories integer;
+  visible_photos integer;
+  visible_cover integer;
+begin
+  insert into auth.users (id, email) values (fixture_user, 'rls-check@example.com')
+  on conflict (id) do nothing;
+
+  insert into public.pages (random_id, name, date_of_birth, date_of_death, created_by, access_mode,
+                            access_code_hash, access_code_rotated_at, announcement_enabled)
+  values ('RlsCheck0001', 'RLS Check', '1940-01-01', '2020-01-01', fixture_user, 'code',
+          'scrypt$16384$8$1$00$00', now(), true)
+  returning id into fixture_page;
+
+  insert into public.memories (page_id, contributor_email, contributor_name, body, status, approved_at)
+  values (fixture_page, 'rls-check@example.com', 'A friend', 'A private memory.', 'approved', now())
+  returning id into fixture_memory;
+
+  insert into public.photos (page_id, memory_id, original_path, sizes)
+  values (fixture_page, fixture_memory, 'x/original.jpg', '{"medium":{"path":"x/medium.jpg"}}'::jsonb);
+  insert into public.photos (page_id, is_cover, original_path, sizes)
+  values (fixture_page, true, 'c/original.jpg', '{"medium":{"path":"c/medium.jpg"}}'::jsonb);
+
+  -- As an anonymous visitor with no session at all.
+  set local role anon;
+  select count(*) into visible_memories from public.memories where page_id = fixture_page;
+  select count(*) into visible_photos from public.photos
+    where page_id = fixture_page and not is_cover;
+  select count(*) into visible_cover from public.photos
+    where page_id = fixture_page and is_cover;
+  reset role;
+
+  if visible_memories <> 0 then
+    raise exception 'the anon key returned % memories from a code-gated page', visible_memories;
+  end if;
+  if visible_photos <> 0 then
+    raise exception 'the anon key returned % contributed photos from a code-gated page', visible_photos;
+  end if;
+  -- The portrait is announcement content: the share card has to render it for a
+  -- scraper with no cookie, so it stays readable on purpose.
+  if visible_cover <> 1 then
+    raise exception 'the cover photo of a gated page must stay public (got %)', visible_cover;
+  end if;
+
+  -- And in approval mode, which is the higher-sensitivity of the two gates.
+  update public.pages set access_mode = 'approved' where id = fixture_page;
+  set local role anon;
+  select count(*) into visible_memories from public.memories where page_id = fixture_page;
+  select count(*) into visible_photos from public.photos
+    where page_id = fixture_page and not is_cover;
+  reset role;
+
+  if visible_memories <> 0 or visible_photos <> 0 then
+    raise exception 'the anon key returned % memories and % photos from an approval-gated page',
+      visible_memories, visible_photos;
+  end if;
+
+  -- The same page in link mode is the product we already shipped.
+  update public.pages set access_mode = 'link' where id = fixture_page;
+  set local role anon;
+  select count(*) into visible_memories from public.memories where page_id = fixture_page;
+  select count(*) into visible_photos from public.photos
+    where page_id = fixture_page and not is_cover;
+  reset role;
+
+  if visible_memories <> 1 or visible_photos <> 1 then
+    raise exception 'a link-mode page stopped being publicly readable (memories %, photos %)',
+      visible_memories, visible_photos;
+  end if;
 
   delete from public.pages where id = fixture_page;
   delete from auth.users where id = fixture_user;
