@@ -232,6 +232,34 @@ begin
 end
 $$;
 
+-- The access code hash is the one column on `pages` the anon key may not read,
+-- and every other column is one the app does read. Both halves are assertions:
+-- a leaked hash is an offline brute-force target, and an ungranted column is a
+-- page that renders blank.
+do $$
+declare
+  leaked text;
+  ungranted text[];
+begin
+  if has_column_privilege('anon', 'public.pages', 'access_code_hash', 'SELECT') then
+    leaked := 'access_code_hash';
+    raise exception 'anon can read pages.% — revoke it', leaked;
+  end if;
+
+  select array_agg(column_name::text) into ungranted
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'pages'
+    and column_name <> 'access_code_hash'
+    and not has_column_privilege('anon', 'public.pages', column_name, 'SELECT');
+
+  if ungranted is not null then
+    raise exception
+      'anon cannot read pages columns %, so the public page will render without them — add them to the grant in 0005',
+      ungranted;
+  end if;
+end
+$$;
+
 -- Reading a gated page must not be a public read. Both policies have to filter
 -- on access_mode; without it the anon key still returns every memory.
 do $$

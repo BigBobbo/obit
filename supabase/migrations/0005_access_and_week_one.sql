@@ -41,6 +41,24 @@ alter table public.pages drop constraint if exists pages_code_mode_needs_code;
 alter table public.pages add constraint pages_code_mode_needs_code
   check (access_mode <> 'code' or access_code_hash is not null);
 
+-- The hash is not public data. `pages` rows stay readable with the anon key —
+-- the announcement fields have to be — and the anon key ships in every browser
+-- bundle, so a table-wide SELECT would hand the exact population we are gating
+-- against (has the link, lacks the code) an offline target to grind. scrypt
+-- makes that expensive; not handing it over makes it impossible.
+--
+-- Column-level REVOKE cannot narrow a table-level GRANT, so the table grant
+-- goes and every other column is granted back by name. `schema-assertions.sql`
+-- fails if a later migration adds a column and forgets to grant it, so this
+-- stays loud rather than silently hiding data from the app.
+revoke select on public.pages from anon, authenticated;
+grant select (
+  id, random_id, slug, name, date_of_birth, date_of_death, bio,
+  cover_photo_path, obituary_url, status, review_everything, auto_publish_optout,
+  created_by, last_steward_activity_at, deleted_at, created_at,
+  announcement_enabled, announcement_text, access_mode, access_code_rotated_at
+) on public.pages to anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- 2. Access requests (mode = 'approved')
 -- ---------------------------------------------------------------------------

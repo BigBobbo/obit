@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { limitsFor } from "@/lib/plan";
 import { touchStewardActivity, logEvent } from "@/lib/audit";
+import { hashAccessCode, isValidAccessCode, normalizeAccessCode } from "@/lib/access";
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
@@ -16,6 +17,13 @@ const patchSchema = z.object({
     .regex(/^[a-z0-9][a-z0-9-]{2,80}$/)
     .nullable()
     .optional(),
+  // PRD v2 §1: the access model.
+  accessMode: z.enum(["link", "code", "approved"]).optional(),
+  // Setting this sets *or rotates* the code; rotating invalidates every
+  // visitor cookie, which is the point of having a rotate button at all.
+  accessCode: z.string().max(100).optional(),
+  announcementEnabled: z.boolean().optional(),
+  announcementText: z.string().max(600).optional(),
 });
 
 async function requireSteward(pageId: string) {
@@ -75,6 +83,46 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       if (taken) return NextResponse.json({ error: "That link is already taken." }, { status: 409 });
     }
     updates.slug = input.slug;
+  }
+
+  if (input.announcementEnabled !== undefined) {
+    updates.announcement_enabled = input.announcementEnabled;
+  }
+  if (input.announcementText !== undefined) updates.announcement_text = input.announcementText;
+
+  // The access code and the mode move together: a page can never be left in
+  // code mode with no code, and rotating the code has to invalidate the
+  // cookies minted under the old one.
+  if (input.accessCode !== undefined && input.accessCode !== "") {
+    const normalized = normalizeAccessCode(input.accessCode);
+    if (!isValidAccessCode(normalized)) {
+      return NextResponse.json(
+        {
+          error:
+            "Choose a code of at least four letters or numbers — words and dashes are fine, like “nana-rose”.",
+        },
+        { status: 400 },
+      );
+    }
+    updates.access_code_hash = hashAccessCode(normalized);
+    updates.access_code_rotated_at = new Date().toISOString();
+  }
+
+  if (input.accessMode !== undefined) {
+    if (input.accessMode === "code" && updates.access_code_hash === undefined) {
+      const { data: existing } = await admin
+        .from("pages")
+        .select("access_code_hash")
+        .eq("id", id)
+        .single();
+      if (!existing?.access_code_hash) {
+        return NextResponse.json(
+          { error: "Choose an access code before switching this page to code access." },
+          { status: 400 },
+        );
+      }
+    }
+    updates.access_mode = input.accessMode;
   }
 
   if (Object.keys(updates).length > 0) {

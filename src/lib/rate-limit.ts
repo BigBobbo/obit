@@ -42,4 +42,14 @@ export const RATE_LIMITS = {
   reportPerEmailPerDay: { max: 5, window: DAY },
   // Page creation (free tier: 2 per account per 30 days — checked separately)
   pageCreatePerIpPerDay: { max: 5, window: DAY },
+  // Access gate (PRD v2 §1). The code is a soft gate, so the thing that has to
+  // hold is that guessing it costs more than reading it off the order of
+  // service: an attacker gets ten tries an hour, a whole page sixty.
+  accessCodePerIpPerHour: { max: 10, window: 3600 },
+  accessCodePerPagePerHour: { max: 60, window: 3600 },
+  accessRequestPerIpPerDay: { max: 10, window: DAY },
+  accessRequestPerPagePerDay: { max: 50, window: DAY },
+  // RSVPs: a head count, not a guest book — generous, but not a spam vector.
+  rsvpPerIpPerDay: { max: 10, window: DAY },
+  rsvpPerEventPerDay: { max: 200, window: DAY },
 } as const;
